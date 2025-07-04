@@ -200,6 +200,9 @@ app.use(helmet({
   }
 }));
 
+// Trust proxy for Nginx reverse proxy
+app.set('trust proxy', 1);
+
 app.use(cors({
   origin: CONFIG.ALLOWED_ORIGINS,
   credentials: true
