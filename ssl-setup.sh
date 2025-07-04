@@ -89,7 +89,7 @@ server {
     
     # Proxy to Node.js application
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://167.99.70.90:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -106,7 +106,7 @@ server {
     
     # Static files caching
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)\$ {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://167.99.70.90:3000;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }

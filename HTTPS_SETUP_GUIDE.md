@@ -61,7 +61,7 @@ server {
     
     # Proxy to Node.js application
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://167.99.70.90:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -102,7 +102,7 @@ Update your `.env` file:
 NODE_ENV=production
 
 # Add HTTPS origins
-ALLOWED_ORIGINS=https://oplex.online,https://www.oplex.online,http://localhost:3000
+ALLOWED_ORIGINS=https://oplex.online,https://www.oplex.online,http://167.99.70.90:3000
 ```
 
 ### Server Configuration

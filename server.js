@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const morgan = require('morgan');
-const Redis = require('ioredis');
+const redis = require('redis');
 const { Server } = require('socket.io');
 const http = require('http');
 const { simpleParser } = require('mailparser');
@@ -26,8 +26,6 @@ const CONFIG = {
   
   // CORS Configuration
   ALLOWED_ORIGINS: [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
     'http://167.99.70.90:3000',
     'https://oplex.online',
     'https://www.oplex.online'
@@ -71,19 +69,19 @@ const JWT_SECRET = CONFIG.JWT_SECRET;
 const ADMIN_PASSWORD_HASH = CONFIG.ADMIN_PASSWORD_HASH;
 
 // Redis connection
-const redis = new Redis({
-  host: CONFIG.REDIS_HOST,
-  port: CONFIG.REDIS_PORT,
-  password: CONFIG.REDIS_PASSWORD,
-  retryDelayOnFailover: 100,
-  maxRetriesPerRequest: 3
+const client = redis.createClient({
+  host: '127.0.0.1',
+  port: 6379
 });
 
-redis.on('connect', () => {
+// Connect to Redis
+client.connect();
+
+client.on('connect', () => {
   console.log('✅ Connected to Redis server');
 });
 
-redis.on('error', (err) => {
+client.on('error', (err) => {
   console.error('❌ Redis connection error:', err);
 });
 
@@ -162,32 +160,32 @@ io.on('connection', (socket) => {
 
 // Helper functions for Redis operations
 const saveEmailToRedis = async (email) => {
-  await redis.hset(REDIS_KEYS.EMAILS, email.id, JSON.stringify(email));
-  await redis.expire(REDIS_KEYS.EMAILS, 24 * 60 * 60); // 24 hours
+  await client.hSet(REDIS_KEYS.EMAILS, email.id, JSON.stringify(email));
+  await client.expire(REDIS_KEYS.EMAILS, 24 * 60 * 60); // 24 hours
 };
 
 const getEmailsFromRedis = async () => {
-  const emails = await redis.hgetall(REDIS_KEYS.EMAILS);
+  const emails = await client.hGetAll(REDIS_KEYS.EMAILS);
   return Object.values(emails).map(email => JSON.parse(email));
 };
 
 const saveLogToRedis = async (log) => {
-  await redis.lpush(REDIS_KEYS.LOGS, JSON.stringify(log));
-  await redis.ltrim(REDIS_KEYS.LOGS, 0, 999); // Keep last 1000 logs
+  await client.lPush(REDIS_KEYS.LOGS, JSON.stringify(log));
+  await client.lTrim(REDIS_KEYS.LOGS, 0, 999); // Keep last 1000 logs
 };
 
 const getLogsFromRedis = async (start = 0, end = 19) => {
-  const logs = await redis.lrange(REDIS_KEYS.LOGS, start, end);
+  const logs = await client.lRange(REDIS_KEYS.LOGS, start, end);
   return logs.map(log => JSON.parse(log));
 };
 
 const saveMessageToRedis = async (emailId, message) => {
-  await redis.lpush(REDIS_KEYS.MESSAGES + emailId, JSON.stringify(message));
-  await redis.expire(REDIS_KEYS.MESSAGES + emailId, 24 * 60 * 60); // 24 hours
+  await client.lPush(REDIS_KEYS.MESSAGES + emailId, JSON.stringify(message));
+  await client.expire(REDIS_KEYS.MESSAGES + emailId, 24 * 60 * 60); // 24 hours
 };
 
 const getMessagesFromRedis = async (emailId) => {
-  const messages = await redis.lrange(REDIS_KEYS.MESSAGES + emailId, 0, -1);
+  const messages = await client.lRange(REDIS_KEYS.MESSAGES + emailId, 0, -1);
   return messages.map(message => JSON.parse(message));
 };
 
@@ -348,7 +346,7 @@ app.get('/api/admin/logs', authenticateToken, async (req, res) => {
     const endIndex = startIndex + limit - 1;
 
     const paginatedLogs = await getLogsFromRedis(startIndex, endIndex);
-    const totalLogs = await redis.llen(REDIS_KEYS.LOGS);
+    const totalLogs = await client.lLen(REDIS_KEYS.LOGS);
 
     res.json({
       success: true,
@@ -522,7 +520,7 @@ setInterval(async () => {
     
     if (expiredCount > 0) {
       // Clear expired emails from Redis
-      await redis.del(REDIS_KEYS.EMAILS);
+      await client.del(REDIS_KEYS.EMAILS);
       for (const email of activeEmails) {
         await saveEmailToRedis(email);
       }
@@ -556,7 +554,7 @@ app.get('/api/admin/test-smtp', authenticateToken, async (req, res) => {
     
     // Test Redis connection
     try {
-      await redis.ping();
+      await client.ping();
       testResult.redis = true;
     } catch (error) {
       console.error('Redis test failed:', error);
@@ -661,8 +659,8 @@ app.post('/api/admin/send-test-otp', authenticateToken, async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`🚀 RedMail Admin Server running on port ${PORT}`);
-  console.log(`📧 Admin Panel: http://localhost:${PORT}/admin`);
-  console.log(`🔒 API Base: http://localhost:${PORT}/api`);
+  console.log(`📧 Admin Panel: http://167.99.70.90:${PORT}/admin`);
+    console.log(`🔒 API Base: http://167.99.70.90:${PORT}/api`);
   console.log(`🌐 VPS IP: ${CONFIG.VPS_IP}`);
   console.log(`📮 Email Domain: ${CONFIG.EMAIL_DOMAIN}`);
   

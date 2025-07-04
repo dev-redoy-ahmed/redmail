@@ -48,7 +48,7 @@ node server.js
 
 5. Access the admin panel:
 ```
-http://localhost:3000/admin
+http://167.99.70.90:3000/admin
 ```
 
 Default login: `admin` / `password`

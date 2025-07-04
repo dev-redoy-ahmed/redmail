@@ -147,7 +147,7 @@ fi
 # Test application
 echo -e "${BLUE}🔍 Testing application...${NC}"
 sleep 5  # Wait for app to start
-if curl -s http://localhost:3000/api/health > /dev/null 2>&1; then
+if curl -s http://167.99.70.90:3000/api/health > /dev/null 2>&1; then
     print_status "Application is responding"
 else
     print_warning "Application health check failed (this might be normal if no health endpoint exists)"
