@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedMail Admin Panel - Secure Temporary Mail Management</title>
+    <link rel="stylesheet" href="/css/admin.css">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <a href="/admin" class="sidebar-logo">
+                    <i class="fas fa-envelope-open-text"></i>
+                    RedMail Admin
+                </a>
+            </div>
+            
+            <nav class="sidebar-nav">
+                <div class="nav-item">
+                    <a href="#dashboard" class="nav-link active" data-page="dashboard">
+                        <i class="fas fa-tachometer-alt"></i>
+                        Dashboard
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="#emails" class="nav-link" data-page="emails">
+                        <i class="fas fa-inbox"></i>
+                        Temporary Emails
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="#logs" class="nav-link" data-page="logs">
+                        <i class="fas fa-list-alt"></i>
+                        Activity Logs
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="#settings" class="nav-link" data-page="settings">
+                        <i class="fas fa-cog"></i>
+                        Settings
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="#api" class="nav-link" data-page="api">
+                        <i class="fas fa-code"></i>
+                        API Documentation
+                    </a>
+                </div>
+            </nav>
+            
+            <!-- Test Button -->
+            <button class="test-button" id="testTempMail">
+                <i class="fas fa-flask"></i>
+                Test Temporary Mail
+            </button>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <button class="sidebar-toggle" id="sidebarToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h1 class="page-title" id="pageTitle">Dashboard</h1>
+                </div>
+                
+                <div class="header-right">
+                    <div class="user-menu">
+                        <div class="user-avatar" id="userAvatar" title="Admin User">
+                            <i class="fas fa-user-shield"></i>
+                        </div>
+                    </div>
+                    <button class="btn btn-error" id="logoutBtn">
+                        <i class="fas fa-sign-out-alt"></i>
+                        Logout
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Content Area -->
+            <div class="content" id="content">
+                <!-- Dashboard Content -->
+                <div id="dashboard-content" class="page-content active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalEmails">0</div>
+                            <div class="stat-label">Total Emails</div>
+                        </div>
+                        <div class="stat-card success">
+                            <div class="stat-value" id="activeEmails">0</div>
+                            <div class="stat-label">Active Emails</div>
+                        </div>
+                        <div class="stat-card warning">
+                            <div class="stat-value" id="expiredEmails">0</div>
+                            <div class="stat-label">Expired Emails</div>
+                        </div>
+                        <div class="stat-card error">
+                            <div class="stat-value" id="todayActivity">0</div>
+                            <div class="stat-label">Today's Activity</div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">System Overview</h3>
+                        </div>
+                        <div class="card-body">
+                            <p>Welcome to the RedMail Admin Panel. This secure dashboard allows you to monitor and manage temporary email services.</p>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                System is running smoothly. All APIs are secure and operational.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Emails Content -->
+                <div id="emails-content" class="page-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Temporary Emails Management</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="table" id="emailsTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Email Address</th>
+                                            <th>Created At</th>
+                                            <th>Expires At</th>
+                                            <th>Messages</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="emailsTableBody">
+                                        <tr>
+                                            <td colspan="5" class="text-center">Loading emails...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Logs Content -->
+                <div id="logs-content" class="page-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Activity Logs</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="table" id="logsTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Timestamp</th>
+                                            <th>Action</th>
+                                            <th>Email</th>
+                                            <th>IP Address</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="logsTableBody">
+                                        <tr>
+                                            <td colspan="4" class="text-center">Loading logs...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Settings Content -->
+                <div id="settings-content" class="page-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Domain & SMTP Configuration</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label class="form-label">Email Domain</label>
+                                <input type="text" class="form-input" id="emailDomain" value="oplex.online">
+                                <small class="form-help">Your custom domain for temporary emails</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">VPS IP Address</label>
+                                <input type="text" class="form-input" id="vpsIp" value="206.189.94.221" readonly>
+                                <small class="form-help">Your server's public IP address</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">SMTP Port</label>
+                                <input type="number" class="form-input" id="smtpPort" value="25" readonly>
+                                <small class="form-help">SMTP server listening port</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Redis Host</label>
+                                <input type="text" class="form-input" id="redisHost" value="0.0.0.0" readonly>
+                                <small class="form-help">Redis server host address</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Redis Port</label>
+                                <input type="number" class="form-input" id="redisPort" value="6379" readonly>
+                                <small class="form-help">Redis server port</small>
+                            </div>
+                            <button class="btn btn-primary" id="testConnectivity">
+                                <i class="fas fa-check-circle"></i>
+                                Test System Connectivity
+                            </button>
+                            <button class="btn btn-success ml-2" id="testOTP">
+                                <i class="fas fa-paper-plane"></i>
+                                Send Test OTP
+                            </button>
+                            <div id="connectivityResult" class="mt-3"></div>
+                            <div id="otpTestResult" class="mt-3"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h3 class="card-title">DNS Configuration Guide</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                <strong>Required DNS Records for your domain:</strong>
+                            </div>
+                            <div class="dns-record">
+                                <strong>A Record:</strong>
+                                <code>@ → 206.189.94.221</code>
+                            </div>
+                            <div class="dns-record">
+                                <strong>MX Record:</strong>
+                                <code>@ → oplex.online (Priority: 10)</code>
+                            </div>
+                            <div class="dns-record">
+                                <strong>TXT Record (SPF):</strong>
+                                <code>@ → "v=spf1 ip4:206.189.94.221 ~all"</code>
+                            </div>
+                            <div class="alert alert-success mt-3">
+                                <i class="fas fa-check"></i>
+                                DNS records have been configured for oplex.online
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- API Documentation Content -->
+                <div id="api-content" class="page-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">API Documentation</h3>
+                        </div>
+                        <div class="card-body">
+                            <h4>Authentication</h4>
+                            <p>All API requests require a valid JWT token in the Authorization header:</p>
+                            <pre><code>Authorization: Bearer YOUR_JWT_TOKEN</code></pre>
+                            
+                            <h4>Endpoints</h4>
+                            <div class="api-endpoint">
+                                <h5>POST /api/auth/login</h5>
+                                <p>Authenticate admin user</p>
+                                <pre><code>{
+  "password": "your_password"
+}</code></pre>
+                            </div>
+                            
+                            <div class="api-endpoint">
+                                <h5>POST /api/temp-email/generate</h5>
+                                <p>Generate a new temporary email</p>
+                                <pre><code>Response: {
+  "success": true,
+  "email": "abc12345@oplex.online",
+  "id": "uuid",
+  "expiresAt": "2024-01-01T00:00:00.000Z"
+}</code></pre>
+                            </div>
+                            
+                            <div class="api-endpoint">
+                                <h5>GET /api/temp-email/:emailId/messages</h5>
+                                <p>Get messages for a temporary email</p>
+                            </div>
+                            
+                            <div class="api-endpoint">
+                                <h5>GET /api/admin/emails</h5>
+                                <p>Get all temporary emails (Admin only)</p>
+                            </div>
+                            
+                            <div class="api-endpoint">
+                                <h5>GET /api/admin/logs</h5>
+                                <p>Get activity logs (Admin only)</p>
+                            </div>
+                            
+                            <div class="api-endpoint">
+                                <h5>GET /api/admin/stats</h5>
+                                <p>Get system statistics (Admin only)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <footer class="footer">
+                <p>&copy; 2024 RedMail Admin Panel. Secure Temporary Mail Service by Redoy Ahmed. All rights reserved.</p>
+            </footer>
+        </main>
+    </div>
+    
+    <!-- Test Modal -->
+    <div id="testModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Test Temporary Mail</h3>
+                <button class="modal-close" id="closeTestModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="testResult"></div>
+                <button class="btn btn-primary" id="generateTestEmail">
+                    <i class="fas fa-plus"></i>
+                    Generate Test Email
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/js/admin.js"></script>
+</body>
+</html>
