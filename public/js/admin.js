@@ -3,6 +3,7 @@ class AdminPanel {
     constructor() {
         this.token = localStorage.getItem('adminToken');
         this.currentPage = 'dashboard';
+        this.socket = null;
         this.init();
     }
 
@@ -10,6 +11,7 @@ class AdminPanel {
         this.checkAuth();
         this.bindEvents();
         this.loadDashboard();
+        this.initSocketIO();
     }
 
     checkAuth() {
@@ -189,6 +191,11 @@ class AdminPanel {
             this.showOTPTestModal();
         });
 
+        // Save settings button
+        document.getElementById('saveSettings').addEventListener('click', () => {
+            this.saveSettings();
+        });
+
         // Responsive sidebar
         window.addEventListener('resize', () => {
             const sidebar = document.getElementById('sidebar');
@@ -238,6 +245,9 @@ class AdminPanel {
                 break;
             case 'logs':
                 this.loadLogs();
+                break;
+            case 'settings':
+                this.loadSettings();
                 break;
         }
     }
@@ -639,6 +649,282 @@ class AdminPanel {
         }
 
         return result;
+    }
+
+    initSocketIO() {
+        if (!this.token) return;
+        
+        // Initialize Socket.IO connection
+        this.socket = io();
+        
+        // Handle connection events
+        this.socket.on('connect', () => {
+            console.log('Socket.IO connected for real-time updates');
+            this.showNotification('Connected to real-time updates', 'success');
+        });
+        
+        this.socket.on('disconnect', () => {
+            console.log('Socket.IO disconnected');
+            this.showNotification('Disconnected from real-time updates', 'warning');
+        });
+        
+        // Handle real-time email notifications
+        this.socket.on('messageReceived', (data) => {
+            console.log('New message received:', data);
+            this.handleNewMessage(data);
+        });
+        
+        // Handle real-time log notifications
+        this.socket.on('newLog', (data) => {
+            console.log('New log entry:', data);
+            this.handleNewLog(data);
+        });
+    }
+    
+    handleNewMessage(data) {
+        // Show notification for new message
+        this.showNotification(`New message received for ${data.email}`, 'info');
+        
+        // Update dashboard stats if on dashboard page
+        if (this.currentPage === 'dashboard') {
+            this.loadDashboard();
+        }
+        
+        // Update emails table if on emails page
+        if (this.currentPage === 'emails') {
+            this.loadEmails();
+        }
+        
+        // Play notification sound
+        this.playNotificationSound();
+    }
+    
+    handleNewLog(data) {
+        // Update logs table if on logs page
+        if (this.currentPage === 'logs') {
+            this.loadLogs();
+        }
+    }
+    
+    showNotification(message, type = 'info') {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.innerHTML = `
+            <div class="notification-content">
+                <i class="fas ${this.getNotificationIcon(type)}"></i>
+                <span>${message}</span>
+                <button class="notification-close">&times;</button>
+            </div>
+        `;
+        
+        // Add notification styles if not already added
+        if (!document.querySelector('#notification-styles')) {
+            const notificationStyles = document.createElement('style');
+            notificationStyles.id = 'notification-styles';
+            notificationStyles.textContent = `
+                .notification {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: var(--bg-primary);
+                    border: 1px solid var(--border-primary);
+                    border-radius: var(--radius-md);
+                    padding: 1rem;
+                    box-shadow: var(--shadow-lg);
+                    z-index: 1000;
+                    min-width: 300px;
+                    animation: slideInRight 0.3s ease-out;
+                }
+                .notification-success {
+                    border-left: 4px solid #10b981;
+                }
+                .notification-info {
+                    border-left: 4px solid #3b82f6;
+                }
+                .notification-warning {
+                    border-left: 4px solid #f59e0b;
+                }
+                .notification-error {
+                    border-left: 4px solid #ef4444;
+                }
+                .notification-content {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                }
+                .notification-content i {
+                    color: var(--primary-color);
+                }
+                .notification-content span {
+                    flex: 1;
+                    color: var(--text-primary);
+                }
+                .notification-close {
+                    background: none;
+                    border: none;
+                    color: var(--text-secondary);
+                    cursor: pointer;
+                    font-size: 1.2rem;
+                }
+                @keyframes slideInRight {
+                    from {
+                        transform: translateX(100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                }
+            `;
+            document.head.appendChild(notificationStyles);
+        }
+        
+        // Add to page
+        document.body.appendChild(notification);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 5000);
+        
+        // Close button event
+        notification.querySelector('.notification-close').addEventListener('click', () => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        });
+    }
+    
+    getNotificationIcon(type) {
+        const icons = {
+            success: 'fa-check-circle',
+            info: 'fa-info-circle',
+            warning: 'fa-exclamation-triangle',
+            error: 'fa-times-circle'
+        };
+        return icons[type] || 'fa-info-circle';
+    }
+    
+    playNotificationSound() {
+        // Create a simple notification sound using Web Audio API
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.2);
+        } catch (error) {
+            console.log('Audio notification not supported');
+         }
+     }
+
+    async loadSettings() {
+        try {
+            const response = await this.apiCall('/api/admin/settings');
+            
+            // Load current settings
+            document.getElementById('emailExpiryTime').value = response.settings.emailExpiryTime || 60;
+            document.getElementById('messageRetentionTime').value = response.settings.messageRetentionTime || 24;
+            document.getElementById('realtimeApiPush').checked = response.settings.realtimeApiPush !== false;
+            document.getElementById('autoRefreshInterval').value = response.settings.autoRefreshInterval || 5;
+        } catch (error) {
+            console.error('Failed to load settings:', error);
+            // Use default values if loading fails
+        }
+    }
+
+    async saveSettings() {
+        const resultDiv = document.getElementById('settingsResult');
+        const button = document.getElementById('saveSettings');
+        
+        button.disabled = true;
+        button.innerHTML = '<span class="loading"></span> Saving...';
+        
+        try {
+            const settings = {
+                emailExpiryTime: parseInt(document.getElementById('emailExpiryTime').value),
+                messageRetentionTime: parseInt(document.getElementById('messageRetentionTime').value),
+                realtimeApiPush: document.getElementById('realtimeApiPush').checked,
+                autoRefreshInterval: parseInt(document.getElementById('autoRefreshInterval').value)
+            };
+            
+            // Validate settings
+            if (settings.emailExpiryTime < 1 || settings.emailExpiryTime > 1440) {
+                throw new Error('Email expiry time must be between 1-1440 minutes');
+            }
+            if (settings.messageRetentionTime < 1 || settings.messageRetentionTime > 168) {
+                throw new Error('Message retention time must be between 1-168 hours');
+            }
+            if (settings.autoRefreshInterval < 1 || settings.autoRefreshInterval > 60) {
+                throw new Error('Auto-refresh interval must be between 1-60 seconds');
+            }
+            
+            const response = await this.apiCall('/api/admin/settings', 'POST', settings);
+            
+            resultDiv.innerHTML = `
+                <div class="alert alert-success">
+                    <h4><i class="fas fa-check-circle"></i> Settings Saved Successfully!</h4>
+                    <p><strong>Email Expiry:</strong> ${settings.emailExpiryTime} minutes</p>
+                    <p><strong>Message Retention:</strong> ${settings.messageRetentionTime} hours</p>
+                    <p><strong>Real-time API Push:</strong> ${settings.realtimeApiPush ? 'Enabled' : 'Disabled'}</p>
+                    <p><strong>Auto-refresh Interval:</strong> ${settings.autoRefreshInterval} seconds</p>
+                    <div class="mt-2">
+                        <small class="text-info">
+                            <i class="fas fa-info-circle"></i>
+                            Settings will take effect immediately for new emails.
+                        </small>
+                    </div>
+                </div>
+            `;
+            
+            // Update auto-refresh if enabled
+            this.updateAutoRefresh(settings.autoRefreshInterval, settings.realtimeApiPush);
+            
+        } catch (error) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-error">
+                    <h4><i class="fas fa-exclamation-circle"></i> Failed to Save Settings</h4>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        } finally {
+            button.disabled = false;
+            button.innerHTML = '<i class="fas fa-save"></i> Save Settings';
+        }
+    }
+
+    updateAutoRefresh(interval, enabled) {
+        // Clear existing auto-refresh
+        if (this.autoRefreshTimer) {
+            clearInterval(this.autoRefreshTimer);
+        }
+        
+        // Set new auto-refresh if enabled
+        if (enabled && interval > 0) {
+            this.autoRefreshTimer = setInterval(() => {
+                if (this.currentPage === 'emails') {
+                    this.loadEmails();
+                } else if (this.currentPage === 'dashboard') {
+                    this.loadDashboard();
+                } else if (this.currentPage === 'logs') {
+                    this.loadLogs();
+                }
+            }, interval * 1000);
+        }
     }
 }
 

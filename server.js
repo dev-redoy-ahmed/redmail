@@ -9,10 +9,10 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const morgan = require('morgan');
+const { simpleParser } = require('mailparser');
 const redis = require('redis');
 const { Server } = require('socket.io');
 const http = require('http');
-const { simpleParser } = require('mailparser');
 
 // Configuration object - replace environment variables
 const CONFIG = {
@@ -52,7 +52,13 @@ const CONFIG = {
   
   // Logging
   LOG_LEVEL: 'info',
-  LOG_FILE: 'logs/app.log'
+  LOG_FILE: 'logs/app.log',
+  
+  // Default settings
+  EMAIL_EXPIRY_TIME: 60, // minutes
+  MESSAGE_RETENTION_TIME: 24, // hours
+  REALTIME_API_PUSH: true,
+  AUTO_REFRESH_INTERVAL: 5 // seconds
 };
 
 const app = express();
@@ -64,26 +70,105 @@ const io = new Server(server, {
   }
 });
 
+// Real-time API endpoint for email subscription
+app.post('/api/temp-email/:emailId/subscribe', async (req, res) => {
+  try {
+    const { emailId } = req.params;
+    const email = await getEmailFromRedis(emailId);
+    
+    if (!email) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+    
+    // Check if email is expired
+    if (new Date() > new Date(email.expiresAt)) {
+      return res.status(410).json({ error: 'Email has expired' });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Subscribe to Socket.IO for real-time updates',
+      email: email.email,
+      socketEvents: {
+        subscribe: `email:${email.email}`,
+        messageEvent: 'new_message',
+        apiEvent: 'api:message'
+      },
+      instructions: {
+        connect: 'Connect to Socket.IO at the same domain',
+        subscribe: `Emit 'subscribe:email' with email address: ${email.email}`,
+        listen: 'Listen for events on the subscribed channel'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Subscribe API error:', error);
+    res.status(500).json({ error: 'Failed to setup subscription' });
+  }
+});
+
+// Real-time status endpoint
+app.get('/api/realtime/status', (req, res) => {
+  res.json({
+    success: true,
+    realtimeEnabled: CONFIG.REALTIME_API_PUSH,
+    autoRefreshInterval: CONFIG.AUTO_REFRESH_INTERVAL,
+    socketIO: {
+      enabled: true,
+      endpoint: '/socket.io/',
+      events: {
+        messageReceived: 'messageReceived',
+        newLog: 'newLog',
+        emailSpecific: 'email:{emailAddress}',
+        apiMessages: 'api:message'
+      }
+    },
+    settings: {
+      emailExpiryTime: CONFIG.EMAIL_EXPIRY_TIME,
+      messageRetentionTime: CONFIG.MESSAGE_RETENTION_TIME
+    }
+  });
+});
+
 const PORT = CONFIG.PORT;
 const JWT_SECRET = CONFIG.JWT_SECRET;
 const ADMIN_PASSWORD_HASH = CONFIG.ADMIN_PASSWORD_HASH;
 
-// Redis connection
-const client = redis.createClient({
-  host: '127.0.0.1',
-  port: 6379
-});
+// Redis connection with graceful fallback
+let client;
+let redisConnected = false;
 
-// Connect to Redis
-client.connect();
+try {
+  client = redis.createClient({
+    host: '127.0.0.1',
+    port: 6379,
+    retry_strategy: () => null // Don't retry on connection failure
+  });
 
-client.on('connect', () => {
-  console.log('✅ Connected to Redis server');
-});
+  // Connect to Redis
+  client.connect().then(() => {
+    redisConnected = true;
+    console.log('✅ Connected to Redis server');
+  }).catch((err) => {
+    console.warn('⚠️  Redis not available, running in memory mode:', err.message);
+    redisConnected = false;
+  });
 
-client.on('error', (err) => {
-  console.error('❌ Redis connection error:', err);
-});
+  client.on('error', (err) => {
+    console.warn('⚠️  Redis connection error, falling back to memory mode:', err.message);
+    redisConnected = false;
+  });
+} catch (error) {
+  console.warn('⚠️  Redis not available, running in memory mode');
+  redisConnected = false;
+}
+
+// In-memory fallback storage
+const memoryStore = {
+  emails: new Map(),
+  logs: [],
+  messages: new Map()
+};
 
 // HTTPS Redirect Middleware (only in production)
 if (CONFIG.NODE_ENV === 'production') {
@@ -151,42 +236,128 @@ const REDIS_KEYS = {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log('👤 Admin connected:', socket.id);
+  console.log('👤 Client connected:', socket.id);
+  
+  // Handle email subscription for real-time updates
+  socket.on('subscribe:email', (emailAddress) => {
+    if (emailAddress) {
+      socket.join(`email:${emailAddress}`);
+      console.log(`Client subscribed to email: ${emailAddress}`);
+      
+      // Send confirmation
+      socket.emit('subscribed', {
+        email: emailAddress,
+        timestamp: new Date()
+      });
+    }
+  });
+  
+  // Handle email unsubscription
+  socket.on('unsubscribe:email', (emailAddress) => {
+    if (emailAddress) {
+      socket.leave(`email:${emailAddress}`);
+      console.log(`Client unsubscribed from email: ${emailAddress}`);
+    }
+  });
+  
+  // Handle API subscription for real-time message updates
+  socket.on('subscribe:api', () => {
+    socket.join('api:listeners');
+    console.log('Client subscribed to API updates');
+  });
   
   socket.on('disconnect', () => {
-    console.log('👤 Admin disconnected:', socket.id);
+    console.log('👤 Client disconnected:', socket.id);
   });
 });
 
-// Helper functions for Redis operations
+// Helper functions for Redis operations with memory fallback
 const saveEmailToRedis = async (email) => {
-  await client.hSet(REDIS_KEYS.EMAILS, email.id, JSON.stringify(email));
-  await client.expire(REDIS_KEYS.EMAILS, 24 * 60 * 60); // 24 hours
+  if (redisConnected && client) {
+    try {
+      await client.hSet(REDIS_KEYS.EMAILS, email.id, JSON.stringify(email));
+      await client.expire(REDIS_KEYS.EMAILS, 24 * 60 * 60); // 24 hours
+    } catch (error) {
+      console.warn('Redis save failed, using memory store:', error.message);
+      memoryStore.emails.set(email.id, email);
+    }
+  } else {
+    memoryStore.emails.set(email.id, email);
+  }
 };
 
 const getEmailsFromRedis = async () => {
-  const emails = await client.hGetAll(REDIS_KEYS.EMAILS);
-  return Object.values(emails).map(email => JSON.parse(email));
+  if (redisConnected && client) {
+    try {
+      const emails = await client.hGetAll(REDIS_KEYS.EMAILS);
+      return Object.values(emails).map(email => JSON.parse(email));
+    } catch (error) {
+      console.warn('Redis get failed, using memory store:', error.message);
+      return Array.from(memoryStore.emails.values());
+    }
+  } else {
+    return Array.from(memoryStore.emails.values());
+  }
 };
 
 const saveLogToRedis = async (log) => {
-  await client.lPush(REDIS_KEYS.LOGS, JSON.stringify(log));
-  await client.lTrim(REDIS_KEYS.LOGS, 0, 999); // Keep last 1000 logs
+  if (redisConnected && client) {
+    try {
+      await client.lPush(REDIS_KEYS.LOGS, JSON.stringify(log));
+      await client.lTrim(REDIS_KEYS.LOGS, 0, 999); // Keep last 1000 logs
+    } catch (error) {
+      console.warn('Redis log save failed, using memory store:', error.message);
+      memoryStore.logs.unshift(log);
+      if (memoryStore.logs.length > 1000) memoryStore.logs = memoryStore.logs.slice(0, 1000);
+    }
+  } else {
+    memoryStore.logs.unshift(log);
+    if (memoryStore.logs.length > 1000) memoryStore.logs = memoryStore.logs.slice(0, 1000);
+  }
 };
 
 const getLogsFromRedis = async (start = 0, end = 19) => {
-  const logs = await client.lRange(REDIS_KEYS.LOGS, start, end);
-  return logs.map(log => JSON.parse(log));
+  if (redisConnected && client) {
+    try {
+      const logs = await client.lRange(REDIS_KEYS.LOGS, start, end);
+      return logs.map(log => JSON.parse(log));
+    } catch (error) {
+      console.warn('Redis log get failed, using memory store:', error.message);
+      return memoryStore.logs.slice(start, end + 1);
+    }
+  } else {
+    return memoryStore.logs.slice(start, end + 1);
+  }
 };
 
 const saveMessageToRedis = async (emailId, message) => {
-  await client.lPush(REDIS_KEYS.MESSAGES + emailId, JSON.stringify(message));
-  await client.expire(REDIS_KEYS.MESSAGES + emailId, 24 * 60 * 60); // 24 hours
+  if (redisConnected && client) {
+    try {
+      await client.lPush(REDIS_KEYS.MESSAGES + emailId, JSON.stringify(message));
+      await client.expire(REDIS_KEYS.MESSAGES + emailId, 24 * 60 * 60); // 24 hours
+    } catch (error) {
+      console.warn('Redis message save failed, using memory store:', error.message);
+      if (!memoryStore.messages.has(emailId)) memoryStore.messages.set(emailId, []);
+      memoryStore.messages.get(emailId).unshift(message);
+    }
+  } else {
+    if (!memoryStore.messages.has(emailId)) memoryStore.messages.set(emailId, []);
+    memoryStore.messages.get(emailId).unshift(message);
+  }
 };
 
 const getMessagesFromRedis = async (emailId) => {
-  const messages = await client.lRange(REDIS_KEYS.MESSAGES + emailId, 0, -1);
-  return messages.map(message => JSON.parse(message));
+  if (redisConnected && client) {
+    try {
+      const messages = await client.lRange(REDIS_KEYS.MESSAGES + emailId, 0, -1);
+      return messages.map(message => JSON.parse(message));
+    } catch (error) {
+      console.warn('Redis message get failed, using memory store:', error.message);
+      return memoryStore.messages.get(emailId) || [];
+    }
+  } else {
+    return memoryStore.messages.get(emailId) || [];
+  }
 };
 
 // Middleware to verify JWT token
@@ -255,7 +426,7 @@ app.post('/api/temp-email/generate', apiLimiter, async (req, res) => {
       id: emailId,
       email: `${emailId.substring(0, 8)}${domain}`,
       createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+      expiresAt: new Date(Date.now() + CONFIG.EMAIL_EXPIRY_TIME * 60 * 1000), // Dynamic expiry time
       messageCount: 0
     };
 
@@ -409,68 +580,130 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// Haraka SMTP Server integration
+// Enhanced SMTP Server with smtp-server
 const setupSMTPServer = () => {
   try {
-    const { spawn } = require('child_process');
-    const path = require('path');
+    const { SMTPServer } = require('smtp-server');
     
-    // Set up Socket.IO for the plugin
-    const redmailHandler = require('./plugins/redmail_handler');
-    redmailHandler.setSocketIO(io);
-    
-    // Start Haraka using our startup script
-    const harakaStartScript = path.join(__dirname, 'start-haraka.js');
-    const harakaProcess = spawn('node', [harakaStartScript], {
-      stdio: 'pipe',
-      env: {
-        ...process.env,
-        EMAIL_DOMAIN: CONFIG.EMAIL_DOMAIN,
-        SMTP_PORT: CONFIG.SMTP_PORT,
-        SMTP_HOST: CONFIG.SMTP_HOST
-      }
+    const smtpServer = new SMTPServer({
+      secure: false,
+      authOptional: true,
+      disabledCommands: ['AUTH', 'STARTTLS'],
+      banner: 'RedMail SMTP Server Ready - No Spam Checking',
+      hideSTARTTLS: true,
+      hidePIPELINING: false,
+      allowInsecureAuth: true,
+      disableReverseLookup: true,
+      
+      // Handle incoming emails
+      onData(stream, session, callback) {
+        let emailData = '';
+        
+        stream.on('data', (chunk) => {
+          emailData += chunk;
+        });
+        
+        stream.on('end', async () => {
+          try {
+            const parsed = await simpleParser(emailData);
+            const recipient = session.envelope.rcptTo[0].address;
+            
+            // Extract email ID from recipient
+            const emailId = recipient.split('@')[0];
+            const emails = await getEmailsFromRedis();
+            const targetEmail = emails.find(e => e.email === recipient);
+            
+            if (targetEmail && new Date() < new Date(targetEmail.expiresAt)) {
+              const message = {
+                id: uuidv4(),
+                from: parsed.from?.text || 'Unknown',
+                to: recipient,
+                subject: parsed.subject || 'No Subject',
+                text: parsed.text || '',
+                html: parsed.html || '',
+                date: new Date(),
+                attachments: parsed.attachments || []
+              };
+              
+              await saveMessageToRedis(targetEmail.id, message);
+              
+              // Update message count
+              targetEmail.messageCount = (targetEmail.messageCount || 0) + 1;
+              await saveEmailToRedis(targetEmail);
+              
+              // Minimal logging for performance - no IP tracking
+               const log = {
+                 id: uuidv4(),
+                 action: 'MESSAGE_RECEIVED',
+                 email: recipient,
+                 timestamp: new Date()
+               };
+               
+               // Fast async operations - no waiting
+               setImmediate(() => {
+                 saveLogToRedis(log);
+                 
+                 const messageData = {
+                   email: recipient,
+                   subject: parsed.subject,
+                   from: parsed.from?.text,
+                   timestamp: new Date(),
+                   messageId: message.id
+                 };
+                 
+                 io.emit('messageReceived', messageData);
+                 io.emit('newLog', log);
+                 
+                 // Real-time API push if enabled
+                 if (CONFIG.REALTIME_API_PUSH) {
+                   // Emit to specific email listeners
+                   io.emit(`email:${recipient}`, {
+                     type: 'new_message',
+                     data: messageData
+                   });
+                   
+                   // Emit to API listeners
+                   io.emit('api:message', {
+                     email: recipient,
+                     message: message,
+                     timestamp: new Date()
+                   });
+                 }
+               });
+              
+              console.log(`📧 Message received for ${recipient}`);
+            }
+            
+            callback();
+          } catch (error) {
+            console.error('SMTP processing error:', error);
+            callback(new Error('Processing failed'));
+          }
+        });
+      },
+      
+      // Accept all recipients - no domain validation for faster processing
+       onRcptTo(address, session, callback) {
+         // Accept all emails without domain checking for maximum speed
+         callback();
+       }
     });
     
-    harakaProcess.stdout.on('data', (data) => {
-      console.log(`📬 Haraka: ${data.toString().trim()}`);
+    const smtpPort = CONFIG.SMTP_PORT;
+    const smtpHost = CONFIG.SMTP_HOST;
+    
+    smtpServer.listen(smtpPort, smtpHost, () => {
+      console.log(`📬 Enhanced SMTP Server running on ${smtpHost}:${smtpPort}`);
+      console.log(`📧 Email domain: ${CONFIG.EMAIL_DOMAIN}`);
     });
     
-    harakaProcess.stderr.on('data', (data) => {
-      console.error(`📬 Haraka Error: ${data.toString().trim()}`);
-    });
-    
-    harakaProcess.on('close', (code) => {
-      console.log(`📬 Haraka process exited with code ${code}`);
-    });
-    
-    harakaProcess.on('error', (error) => {
-      console.error('📬 Haraka process error:', error);
-    });
-    
-    console.log(`📬 Starting Haraka SMTP Server on ${CONFIG.SMTP_HOST}:${CONFIG.SMTP_PORT}`);
-    console.log(`📬 Email domain: ${CONFIG.EMAIL_DOMAIN}`);
-    
-    // Store process reference for cleanup
-    process.harakaProcess = harakaProcess;
-    
-    // Graceful shutdown
-    process.on('SIGINT', () => {
-      if (process.harakaProcess) {
-        console.log('📬 Stopping Haraka SMTP server...');
-        process.harakaProcess.kill('SIGINT');
-      }
-    });
-    
-    process.on('SIGTERM', () => {
-      if (process.harakaProcess) {
-        console.log('📬 Stopping Haraka SMTP server...');
-        process.harakaProcess.kill('SIGTERM');
-      }
+    smtpServer.on('error', (error) => {
+      console.error('SMTP Server error:', error);
     });
     
   } catch (error) {
-    console.error('❌ Failed to start Haraka SMTP server:', error);
-    console.log('⚠️  Haraka SMTP server disabled. Install dependencies: npm install haraka');
+    console.error('❌ Failed to start SMTP server:', error);
+    console.log('⚠️  SMTP server disabled. Install dependencies: npm install smtp-server');
   }
 };
 
@@ -621,12 +854,123 @@ app.post('/api/admin/send-test-otp', authenticateToken, async (req, res) => {
   }
 });
 
+// Settings API endpoints
+app.get('/api/admin/settings', authenticateToken, async (req, res) => {
+  try {
+    const settings = {
+      domain: CONFIG.EMAIL_DOMAIN,
+      vpsIp: CONFIG.VPS_IP,
+      smtpPort: CONFIG.SMTP_PORT,
+      webPort: CONFIG.PORT,
+      redisHost: CONFIG.REDIS_HOST,
+      redisPort: CONFIG.REDIS_PORT,
+      emailExpiryTime: CONFIG.EMAIL_EXPIRY_TIME,
+      messageRetentionTime: CONFIG.MESSAGE_RETENTION_TIME,
+      realtimeApiPush: CONFIG.REALTIME_API_PUSH,
+      autoRefreshInterval: CONFIG.AUTO_REFRESH_INTERVAL
+    };
+    
+    res.json({
+      success: true,
+      settings: settings
+    });
+  } catch (error) {
+    console.error('Get settings error:', error);
+    res.status(500).json({ error: 'Failed to retrieve settings' });
+  }
+});
+
+app.post('/api/admin/settings', authenticateToken, async (req, res) => {
+   try {
+     const settings = req.body;
+    
+    if (!settings) {
+      return res.status(400).json({ error: 'Settings data is required' });
+    }
+    
+    // Update CONFIG object with new settings
+    if (settings.emailExpiryTime !== undefined) {
+      CONFIG.EMAIL_EXPIRY_TIME = parseInt(settings.emailExpiryTime);
+    }
+    if (settings.messageRetentionTime !== undefined) {
+      CONFIG.MESSAGE_RETENTION_TIME = parseInt(settings.messageRetentionTime);
+    }
+    if (settings.realtimeApiPush !== undefined) {
+      CONFIG.REALTIME_API_PUSH = Boolean(settings.realtimeApiPush);
+    }
+    if (settings.autoRefreshInterval !== undefined) {
+      CONFIG.AUTO_REFRESH_INTERVAL = parseInt(settings.autoRefreshInterval);
+    }
+    
+    // Log the settings update
+    const log = {
+      id: uuidv4(),
+      action: 'SETTINGS_UPDATED',
+      timestamp: new Date(),
+      ip: req.ip,
+      changes: settings
+    };
+    await saveLogToRedis(log);
+    
+    // Emit real-time update
+    io.emit('settingsUpdated', settings);
+    io.emit('newLog', log);
+    
+    res.json({
+      success: true,
+      message: 'Settings updated successfully',
+      settings: {
+        emailExpiryTime: CONFIG.EMAIL_EXPIRY_TIME,
+        messageRetentionTime: CONFIG.MESSAGE_RETENTION_TIME,
+        realtimeApiPush: CONFIG.REALTIME_API_PUSH,
+        autoRefreshInterval: CONFIG.AUTO_REFRESH_INTERVAL
+      }
+    });
+    
+  } catch (error) {
+    console.error('Update settings error:', error);
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
+// Cleanup function for expired messages
+function cleanupExpiredMessages() {
+  const now = new Date();
+  const retentionTime = CONFIG.MESSAGE_RETENTION_TIME * 60 * 60 * 1000; // Convert hours to milliseconds
+  
+  if (redisConnected && client) {
+    // Redis cleanup (implement if needed)
+  } else {
+    // Memory cleanup
+    for (const [emailId, messages] of memoryStore.messages) {
+      const filteredMessages = messages.filter(message => {
+        const messageAge = now - new Date(message.date);
+        return messageAge < retentionTime;
+      });
+      
+      if (filteredMessages.length === 0) {
+        memoryStore.messages.delete(emailId);
+      } else {
+        memoryStore.messages.set(emailId, filteredMessages);
+      }
+    }
+  }
+  
+  console.log(`🧹 Cleaned up expired messages (retention: ${CONFIG.MESSAGE_RETENTION_TIME} hours)`);
+}
+
+// Run cleanup every hour
+setInterval(cleanupExpiredMessages, 60 * 60 * 1000);
+
 server.listen(PORT, () => {
   console.log(`🚀 RedMail Admin Server running on port ${PORT}`);
   console.log(`📧 Admin Panel: http://167.99.70.90:${PORT}/admin`);
-    console.log(`🔒 API Base: http://167.99.70.90:${PORT}/api`);
+  console.log(`🔒 API Base: http://167.99.70.90:${PORT}/api`);
   console.log(`🌐 VPS IP: ${CONFIG.VPS_IP}`);
   console.log(`📮 Email Domain: ${CONFIG.EMAIL_DOMAIN}`);
+  console.log(`⚙️  Email Expiry: ${CONFIG.EMAIL_EXPIRY_TIME} minutes`);
+  console.log(`📦 Message Retention: ${CONFIG.MESSAGE_RETENTION_TIME} hours`);
+  console.log(`🔄 Real-time Push: ${CONFIG.REALTIME_API_PUSH ? 'Enabled' : 'Disabled'}`);
   
   // Start SMTP server
   setupSMTPServer();

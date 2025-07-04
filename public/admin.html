@@ -208,6 +208,52 @@
                                 <input type="number" class="form-input" id="redisPort" value="6379" readonly>
                                 <small class="form-help">Redis server port</small>
                             </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h3 class="card-title">Email & Message Settings</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label class="form-label">Email Expiry Time (Minutes)</label>
+                                <input type="number" class="form-input" id="emailExpiryTime" value="60" min="1" max="1440">
+                                <small class="form-help">How long temporary emails remain active (1-1440 minutes)</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Message Retention Time (Hours)</label>
+                                <input type="number" class="form-input" id="messageRetentionTime" value="24" min="1" max="168">
+                                <small class="form-help">How long messages are stored after email expires (1-168 hours)</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Real-time API Push</label>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="realtimeApiPush" checked>
+                                    <label for="realtimeApiPush" class="toggle-label">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <small class="form-help">Enable instant API notifications for new emails/OTPs</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Auto-refresh Interval (Seconds)</label>
+                                <input type="number" class="form-input" id="autoRefreshInterval" value="5" min="1" max="60">
+                                <small class="form-help">How often to check for new messages (1-60 seconds)</small>
+                            </div>
+                            <button class="btn btn-success" id="saveSettings">
+                                <i class="fas fa-save"></i>
+                                Save Settings
+                            </button>
+                            <div id="settingsResult" class="mt-3"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h3 class="card-title">System Tests</h3>
+                        </div>
+                        <div class="card-body">
                             <button class="btn btn-primary" id="testConnectivity">
                                 <i class="fas fa-check-circle"></i>
                                 Test System Connectivity
@@ -329,6 +375,7 @@
         </div>
     </div>
     
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/js/admin.js"></script>
 </body>
 </html>
