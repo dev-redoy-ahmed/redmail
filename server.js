@@ -488,6 +488,125 @@ app.get('/api/temp-email/:emailId/messages', apiLimiter, async (req, res) => {
   }
 });
 
+// Get single message by ID
+app.get('/api/message/:messageId', apiLimiter, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    
+    // Search through all messages to find the one with matching ID
+    let foundMessage = null;
+    
+    if (redisConnected && client) {
+      // Redis implementation
+      const emailIds = await client.sMembers('emails');
+      for (const emailId of emailIds) {
+        const messages = await client.lRange(`messages:${emailId}`, 0, -1);
+        for (const msgStr of messages) {
+          const message = JSON.parse(msgStr);
+          if (message.id === messageId) {
+            foundMessage = message;
+            break;
+          }
+        }
+        if (foundMessage) break;
+      }
+    } else {
+      // Memory implementation
+      for (const [emailId, messages] of memoryStore.messages) {
+        const message = messages.find(m => m.id === messageId);
+        if (message) {
+          foundMessage = message;
+          break;
+        }
+      }
+    }
+    
+    if (!foundMessage) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    res.json({
+      success: true,
+      ...foundMessage
+    });
+  } catch (error) {
+    console.error('Get message error:', error);
+    res.status(500).json({ error: 'Failed to retrieve message' });
+  }
+});
+
+// Delete single message by ID
+app.delete('/api/message/:messageId', apiLimiter, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    
+    let messageDeleted = false;
+    
+    if (redisConnected && client) {
+      // Redis implementation
+      const emailIds = await client.sMembers('emails');
+      for (const emailId of emailIds) {
+        const messages = await client.lRange(`messages:${emailId}`, 0, -1);
+        const updatedMessages = [];
+        
+        for (const msgStr of messages) {
+          const message = JSON.parse(msgStr);
+          if (message.id !== messageId) {
+            updatedMessages.push(msgStr);
+          } else {
+            messageDeleted = true;
+          }
+        }
+        
+        if (messageDeleted) {
+          // Clear and repopulate the list
+          await client.del(`messages:${emailId}`);
+          if (updatedMessages.length > 0) {
+            await client.lPush(`messages:${emailId}`, ...updatedMessages);
+          }
+          break;
+        }
+      }
+    } else {
+      // Memory implementation
+      for (const [emailId, messages] of memoryStore.messages) {
+        const messageIndex = messages.findIndex(m => m.id === messageId);
+        if (messageIndex !== -1) {
+          messages.splice(messageIndex, 1);
+          messageDeleted = true;
+          break;
+        }
+      }
+    }
+    
+    if (!messageDeleted) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    // Log the deletion
+    const log = {
+      id: uuidv4(),
+      action: 'MESSAGE_DELETED',
+      messageId: messageId,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    // Emit real-time update
+    io.emit('messageDeleted', { messageId });
+    io.emit('newLog', log);
+    
+    res.json({
+      success: true,
+      message: 'Message deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete message error:', error);
+    res.status(500).json({ error: 'Failed to delete message' });
+  }
+});
+
 // Admin endpoints - protected
 app.get('/api/admin/emails', authenticateToken, async (req, res) => {
   try {

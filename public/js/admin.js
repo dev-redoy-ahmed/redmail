@@ -1144,10 +1144,10 @@ class AdminPanel {
                     </div>
                 </div>
                 <div class="message-actions">
-                    <button class="btn btn-sm btn-primary" onclick="this.viewFullMessage('${message.id}')">
+                    <button class="btn btn-sm btn-primary" onclick="adminPanel.viewFullMessage('${message.id}')">
                         <i class="fas fa-eye"></i> View Full
                     </button>
-                    <button class="btn btn-sm btn-danger" onclick="this.deleteMessage('${message.id}')">
+                    <button class="btn btn-sm btn-danger" onclick="adminPanel.deleteMessage('${message.id}')">
                         <i class="fas fa-trash"></i> Delete
                     </button>
                 </div>
@@ -1338,6 +1338,92 @@ class AdminPanel {
         if (this.testAutoRefreshTimer) {
             clearInterval(this.testAutoRefreshTimer);
             this.testAutoRefreshTimer = null;
+        }
+    }
+
+    async viewFullMessage(messageId) {
+        try {
+            const message = await this.apiCall(`/api/message/${messageId}`);
+            
+            // Create modal to show full message
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.display = 'block';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 800px;">
+                    <div class="modal-header">
+                        <h3>Full Message</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="message-details">
+                            <div class="detail-row">
+                                <strong>From:</strong> ${message.from || 'Unknown'}
+                            </div>
+                            <div class="detail-row">
+                                <strong>To:</strong> ${message.to || this.currentTestEmail?.email || 'Unknown'}
+                            </div>
+                            <div class="detail-row">
+                                <strong>Subject:</strong> ${message.subject || 'No Subject'}
+                            </div>
+                            <div class="detail-row">
+                                <strong>Date:</strong> ${new Date(message.receivedAt).toLocaleString()}
+                            </div>
+                            <hr>
+                            <div class="message-body">
+                                <h4>Message Content:</h4>
+                                <div class="content-display">
+                                    ${message.html ? 
+                                        `<iframe srcdoc="${message.html.replace(/"/g, '&quot;')}" style="width: 100%; min-height: 300px; border: 1px solid #ddd;"></iframe>` : 
+                                        `<pre style="white-space: pre-wrap; background: #f5f5f5; padding: 1rem; border-radius: 4px;">${message.text || 'No content'}</pre>`
+                                    }
+                                </div>
+                            </div>
+                            ${message.attachments && message.attachments.length > 0 ? `
+                                <hr>
+                                <div class="attachments">
+                                    <h4>Attachments:</h4>
+                                    ${message.attachments.map(att => `
+                                        <div class="attachment-item">
+                                            <i class="fas fa-paperclip"></i>
+                                            ${att.filename} (${att.size} bytes)
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-danger" onclick="adminPanel.deleteMessage('${messageId}'); document.body.removeChild(this.closest('.modal'));">
+                            <i class="fas fa-trash"></i> Delete Message
+                        </button>
+                        <button class="btn btn-secondary" onclick="document.body.removeChild(this.closest('.modal'));">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            modal.querySelector('.modal-close').addEventListener('click', () => {
+                document.body.removeChild(modal);
+            });
+            
+        } catch (error) {
+            this.showNotification('error', 'Failed to load message', error.message);
+        }
+    }
+
+    async deleteMessage(messageId) {
+        if (!confirm('Are you sure you want to delete this message?')) return;
+        
+        try {
+            await this.apiCall(`/api/message/${messageId}`, 'DELETE');
+            this.showNotification('success', 'Message deleted successfully');
+            this.refreshTestInboxMessages();
+        } catch (error) {
+            this.showNotification('error', 'Failed to delete message', error.message);
         }
     }
 }
