@@ -1,11 +1,13 @@
 {
   "name": "redmail-admin",
   "version": "1.0.0",
-  "description": "Secure Admin Panel for Temporary Mail Service",
+  "description": "Secure Admin Panel for Temporary Mail Service with Haraka SMTP Server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "haraka": "node start-haraka.js",
+    "haraka-dev": "nodemon start-haraka.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
@@ -20,7 +22,8 @@
     "nodemailer": "^6.9.4",
     "uuid": "^9.0.0",
     "morgan": "^1.10.0",
-    "smtp-server": "^3.13.0",
+    "haraka": "^3.0.2",
+    "haraka-constants": "^1.0.6",
     "ioredis": "^5.3.2",
     "mailparser": "^3.6.5",
     "socket.io": "^4.7.2"

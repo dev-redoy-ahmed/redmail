@@ -1,0 +1,11 @@
+# Core plugins
+queue/discard
+
+# Authentication and validation
+rcpt_to.in_host_list
+
+# Custom RedMail handler
+redmail_handler
+
+# Logging
+log.syslog

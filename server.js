@@ -409,104 +409,68 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// SMTP Server with smtp-server integration
+// Haraka SMTP Server integration
 const setupSMTPServer = () => {
   try {
-    const { SMTPServer } = require('smtp-server');
+    const { spawn } = require('child_process');
+    const path = require('path');
     
-    const smtpServer = new SMTPServer({
-      secure: false,
-      authOptional: true,
-      disabledCommands: ['AUTH'],
-      
-      // Handle incoming emails
-      onData(stream, session, callback) {
-        let emailData = '';
-        
-        stream.on('data', (chunk) => {
-          emailData += chunk;
-        });
-        
-        stream.on('end', async () => {
-          try {
-            const parsed = await simpleParser(emailData);
-            const recipient = session.envelope.rcptTo[0].address;
-            
-            // Extract email ID from recipient
-            const emailId = recipient.split('@')[0];
-            const emails = await getEmailsFromRedis();
-            const targetEmail = emails.find(e => e.email === recipient);
-            
-            if (targetEmail && new Date() < new Date(targetEmail.expiresAt)) {
-              const message = {
-                id: uuidv4(),
-                from: parsed.from?.text || 'Unknown',
-                to: recipient,
-                subject: parsed.subject || 'No Subject',
-                text: parsed.text || '',
-                html: parsed.html || '',
-                date: new Date(),
-                attachments: parsed.attachments || []
-              };
-              
-              await saveMessageToRedis(targetEmail.id, message);
-              
-              // Update message count
-              targetEmail.messageCount = (targetEmail.messageCount || 0) + 1;
-              await saveEmailToRedis(targetEmail);
-              
-              // Log the message
-              const log = {
-                id: uuidv4(),
-                action: 'MESSAGE_RECEIVED',
-                email: recipient,
-                timestamp: new Date(),
-                ip: session.remoteAddress
-              };
-              await saveLogToRedis(log);
-              
-              // Emit real-time update
-              io.emit('messageReceived', { email: recipient, message });
-              io.emit('newLog', log);
-              
-              console.log(`📧 Message received for ${recipient}`);
-            }
-            
-            callback();
-          } catch (error) {
-            console.error('SMTP processing error:', error);
-            callback(new Error('Processing failed'));
-          }
-        });
-      },
-      
-      // Validate recipients
-      onRcptTo(address, session, callback) {
-        const recipient = address.address;
-        const domain = recipient.split('@')[1];
-        
-        if (domain === CONFIG.EMAIL_DOMAIN) {
-          callback();
-        } else {
-          callback(new Error('Invalid recipient domain'));
-        }
+    // Set up Socket.IO for the plugin
+    const redmailHandler = require('./plugins/redmail_handler');
+    redmailHandler.setSocketIO(io);
+    
+    // Start Haraka using our startup script
+    const harakaStartScript = path.join(__dirname, 'start-haraka.js');
+    const harakaProcess = spawn('node', [harakaStartScript], {
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        EMAIL_DOMAIN: CONFIG.EMAIL_DOMAIN,
+        SMTP_PORT: CONFIG.SMTP_PORT,
+        SMTP_HOST: CONFIG.SMTP_HOST
       }
     });
     
-    const smtpPort = CONFIG.SMTP_PORT;
-    const smtpHost = CONFIG.SMTP_HOST;
-    
-    smtpServer.listen(smtpPort, smtpHost, () => {
-      console.log(`📬 SMTP Server running on ${smtpHost}:${smtpPort}`);
+    harakaProcess.stdout.on('data', (data) => {
+      console.log(`📬 Haraka: ${data.toString().trim()}`);
     });
     
-    smtpServer.on('error', (error) => {
-      console.error('SMTP Server error:', error);
+    harakaProcess.stderr.on('data', (data) => {
+      console.error(`📬 Haraka Error: ${data.toString().trim()}`);
+    });
+    
+    harakaProcess.on('close', (code) => {
+      console.log(`📬 Haraka process exited with code ${code}`);
+    });
+    
+    harakaProcess.on('error', (error) => {
+      console.error('📬 Haraka process error:', error);
+    });
+    
+    console.log(`📬 Starting Haraka SMTP Server on ${CONFIG.SMTP_HOST}:${CONFIG.SMTP_PORT}`);
+    console.log(`📬 Email domain: ${CONFIG.EMAIL_DOMAIN}`);
+    
+    // Store process reference for cleanup
+    process.harakaProcess = harakaProcess;
+    
+    // Graceful shutdown
+    process.on('SIGINT', () => {
+      if (process.harakaProcess) {
+        console.log('📬 Stopping Haraka SMTP server...');
+        process.harakaProcess.kill('SIGINT');
+      }
+    });
+    
+    process.on('SIGTERM', () => {
+      if (process.harakaProcess) {
+        console.log('📬 Stopping Haraka SMTP server...');
+        process.harakaProcess.kill('SIGTERM');
+      }
     });
     
   } catch (error) {
-    console.error('❌ Failed to start SMTP server:', error);
-    console.log('⚠️  SMTP server disabled. Install dependencies: npm install smtp-server');
+    console.error('❌ Failed to start Haraka SMTP server:', error);
+    console.log('⚠️  Haraka SMTP server disabled. Install dependencies: npm install haraka');
   }
 };
 

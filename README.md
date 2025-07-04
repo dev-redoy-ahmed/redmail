@@ -11,9 +11,11 @@ A modern, real-time temporary email service with admin panel built using Node.js
 - 📊 **Analytics**: Email statistics and usage tracking
 - 🗃️ **Redis Storage**: Fast and efficient data storage
 - 📱 **Responsive Design**: Works on all devices
-- 🌐 **SMTP Server**: Built-in email reception (Port 25)
+- 🌐 **Haraka SMTP Server**: High-performance email reception (Port 25)
 - 🚀 **VPS Ready**: Production-ready deployment scripts
 - 🧪 **OTP Testing**: Built-in OTP email testing system
+- 🚀 **Enhanced Performance**: Haraka provides better throughput and resource management
+- 🔧 **Plugin Architecture**: Modular SMTP server with custom plugins
 
 ## 🚀 Quick Start (Local Development)
 
@@ -189,7 +191,7 @@ redmail/
 - **Real-time**: Socket.IO
 - **Database**: Redis
 - **Authentication**: JWT, bcryptjs
-- **Email**: smtp-server, mailparser
+- **Email**: haraka, mailparser
 - **Frontend**: Vanilla JavaScript, CSS3
 - **Deployment**: PM2, Ubuntu/Debian
 
