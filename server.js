@@ -682,6 +682,249 @@ app.get('/api/admin/stats', authenticateToken, async (req, res) => {
   }
 });
 
+// Cleanup expired emails and messages
+app.post('/api/admin/cleanup-expired', authenticateToken, async (req, res) => {
+  try {
+    const now = new Date();
+    let cleanedEmails = 0;
+    let cleanedMessages = 0;
+
+    if (redisConnected && client) {
+      // Redis implementation
+      const emailIds = await client.sMembers('emails');
+      
+      for (const emailId of emailIds) {
+        const emailData = await client.hGetAll(`email:${emailId}`);
+        
+        if (emailData && emailData.expiresAt) {
+          const expiresAt = new Date(emailData.expiresAt);
+          
+          if (expiresAt <= now) {
+            // Remove expired email
+            await client.sRem('emails', emailId);
+            await client.del(`email:${emailId}`);
+            
+            // Remove associated messages
+            const messages = await client.lRange(`messages:${emailId}`, 0, -1);
+            cleanedMessages += messages.length;
+            await client.del(`messages:${emailId}`);
+            
+            cleanedEmails++;
+          } else {
+            // Check for old messages in active emails
+            const messages = await client.lRange(`messages:${emailId}`, 0, -1);
+            const validMessages = [];
+            
+            for (const msgStr of messages) {
+              const message = JSON.parse(msgStr);
+              const messageAge = now - new Date(message.receivedAt);
+              const maxAge = 30 * 60 * 1000; // 30 minutes default
+              
+              if (messageAge <= maxAge) {
+                validMessages.push(msgStr);
+              } else {
+                cleanedMessages++;
+              }
+            }
+            
+            if (validMessages.length !== messages.length) {
+              await client.del(`messages:${emailId}`);
+              if (validMessages.length > 0) {
+                await client.lPush(`messages:${emailId}`, ...validMessages);
+              }
+            }
+          }
+        }
+      }
+    } else {
+      // Memory implementation
+      const emailsToDelete = [];
+      
+      for (const [emailId, emailData] of memoryStore.emails) {
+        const expiresAt = new Date(emailData.expiresAt);
+        
+        if (expiresAt <= now) {
+          emailsToDelete.push(emailId);
+          const messages = memoryStore.messages.get(emailId) || [];
+          cleanedMessages += messages.length;
+          cleanedEmails++;
+        } else {
+          // Check for old messages in active emails
+          const messages = memoryStore.messages.get(emailId) || [];
+          const validMessages = messages.filter(message => {
+            const messageAge = now - new Date(message.receivedAt);
+            const maxAge = 30 * 60 * 1000; // 30 minutes default
+            return messageAge <= maxAge;
+          });
+          
+          if (validMessages.length !== messages.length) {
+            cleanedMessages += messages.length - validMessages.length;
+            memoryStore.messages.set(emailId, validMessages);
+          }
+        }
+      }
+      
+      // Remove expired emails
+      emailsToDelete.forEach(emailId => {
+        memoryStore.emails.delete(emailId);
+        memoryStore.messages.delete(emailId);
+      });
+    }
+
+    // Log the cleanup
+    const log = {
+      id: uuidv4(),
+      action: 'CLEANUP_EXECUTED',
+      details: `Cleaned ${cleanedEmails} emails and ${cleanedMessages} messages`,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+
+    // Emit real-time update
+    io.emit('cleanupCompleted', { cleanedEmails, cleanedMessages });
+    io.emit('newLog', log);
+
+    res.json({
+      success: true,
+      message: 'Cleanup completed successfully',
+      cleanedEmails,
+      cleanedMessages
+    });
+  } catch (error) {
+    console.error('Cleanup error:', error);
+    res.status(500).json({ error: 'Failed to perform cleanup' });
+  }
+});
+
+// Global settings API endpoints
+app.get('/api/admin/global-settings', authenticateToken, async (req, res) => {
+  try {
+    const settings = {
+      autoDeleteTime: process.env.AUTO_DELETE_TIME || 30, // minutes
+      emailChangeInterval: process.env.EMAIL_CHANGE_INTERVAL || 10, // minutes
+      defaultEmailExpiry: process.env.DEFAULT_EMAIL_EXPIRY || 60, // minutes
+      maxMessagesPerEmail: process.env.MAX_MESSAGES_PER_EMAIL || 50,
+      autoCleanupEnabled: process.env.AUTO_CLEANUP_ENABLED === 'true',
+      rateLimitEnabled: process.env.RATE_LIMIT_ENABLED === 'true'
+    };
+    
+    res.json({ success: true, settings });
+  } catch (error) {
+    console.error('Get global settings error:', error);
+    res.status(500).json({ error: 'Failed to retrieve global settings' });
+  }
+});
+
+app.post('/api/admin/global-settings', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      autoDeleteTime, 
+      emailChangeInterval, 
+      defaultEmailExpiry, 
+      maxMessagesPerEmail, 
+      autoCleanupEnabled, 
+      rateLimitEnabled 
+    } = req.body;
+    
+    // Validate settings
+    if (autoDeleteTime && (autoDeleteTime < 1 || autoDeleteTime > 1440)) {
+      return res.status(400).json({ error: 'Auto delete time must be between 1-1440 minutes' });
+    }
+    
+    if (emailChangeInterval && (emailChangeInterval < 1 || emailChangeInterval > 1440)) {
+      return res.status(400).json({ error: 'Email change interval must be between 1-1440 minutes' });
+    }
+    
+    // Update environment variables (in production, these should be saved to a config file)
+    if (autoDeleteTime) process.env.AUTO_DELETE_TIME = autoDeleteTime.toString();
+    if (emailChangeInterval) process.env.EMAIL_CHANGE_INTERVAL = emailChangeInterval.toString();
+    if (defaultEmailExpiry) process.env.DEFAULT_EMAIL_EXPIRY = defaultEmailExpiry.toString();
+    if (maxMessagesPerEmail) process.env.MAX_MESSAGES_PER_EMAIL = maxMessagesPerEmail.toString();
+    if (autoCleanupEnabled !== undefined) process.env.AUTO_CLEANUP_ENABLED = autoCleanupEnabled.toString();
+    if (rateLimitEnabled !== undefined) process.env.RATE_LIMIT_ENABLED = rateLimitEnabled.toString();
+    
+    // Restart cleanup scheduler if auto-cleanup is enabled
+    if (autoCleanupEnabled && autoDeleteTime) {
+      restartCleanupScheduler(autoDeleteTime);
+    }
+    
+    // Log the settings change
+    const log = {
+      id: uuidv4(),
+      action: 'GLOBAL_SETTINGS_UPDATED',
+      details: `Settings updated: autoDeleteTime=${autoDeleteTime}, emailChangeInterval=${emailChangeInterval}`,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    io.emit('newLog', log);
+    
+    res.json({ success: true, message: 'Global settings updated successfully' });
+  } catch (error) {
+    console.error('Update global settings error:', error);
+    res.status(500).json({ error: 'Failed to update global settings' });
+  }
+});
+
+// Advanced features API endpoints
+app.get('/api/admin/advanced-features', authenticateToken, async (req, res) => {
+  try {
+    const features = {
+      antiSpamEnabled: process.env.ANTI_SPAM_ENABLED === 'true',
+      attachmentSupport: process.env.ATTACHMENT_SUPPORT === 'true',
+      mobileApiEnabled: process.env.MOBILE_API_ENABLED === 'true',
+      realTimeNotifications: process.env.REALTIME_NOTIFICATIONS === 'true',
+      bulkOperations: process.env.BULK_OPERATIONS === 'true',
+      analyticsEnabled: process.env.ANALYTICS_ENABLED === 'true'
+    };
+    
+    res.json({ success: true, features });
+  } catch (error) {
+    console.error('Get advanced features error:', error);
+    res.status(500).json({ error: 'Failed to retrieve advanced features' });
+  }
+});
+
+app.post('/api/admin/advanced-features', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      antiSpamEnabled, 
+      attachmentSupport, 
+      mobileApiEnabled, 
+      realTimeNotifications, 
+      bulkOperations, 
+      analyticsEnabled 
+    } = req.body;
+    
+    // Update environment variables
+    if (antiSpamEnabled !== undefined) process.env.ANTI_SPAM_ENABLED = antiSpamEnabled.toString();
+    if (attachmentSupport !== undefined) process.env.ATTACHMENT_SUPPORT = attachmentSupport.toString();
+    if (mobileApiEnabled !== undefined) process.env.MOBILE_API_ENABLED = mobileApiEnabled.toString();
+    if (realTimeNotifications !== undefined) process.env.REALTIME_NOTIFICATIONS = realTimeNotifications.toString();
+    if (bulkOperations !== undefined) process.env.BULK_OPERATIONS = bulkOperations.toString();
+    if (analyticsEnabled !== undefined) process.env.ANALYTICS_ENABLED = analyticsEnabled.toString();
+    
+    // Log the features change
+    const log = {
+      id: uuidv4(),
+      action: 'ADVANCED_FEATURES_UPDATED',
+      details: `Features updated: antiSpam=${antiSpamEnabled}, attachments=${attachmentSupport}, mobileAPI=${mobileApiEnabled}`,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    io.emit('newLog', log);
+    
+    res.json({ success: true, message: 'Advanced features updated successfully' });
+  } catch (error) {
+    console.error('Update advanced features error:', error);
+    res.status(500).json({ error: 'Failed to update advanced features' });
+  }
+});
+
 // Serve admin panel
 app.get('/', (req, res) => {
   res.redirect('/admin');
@@ -829,7 +1072,66 @@ const setupSMTPServer = () => {
   }
 };
 
-// Cleanup expired emails every hour
+// Automatic cleanup scheduler
+let cleanupInterval;
+
+const restartCleanupScheduler = (intervalMinutes) => {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+  }
+  
+  const intervalMs = intervalMinutes * 60 * 1000;
+  
+  cleanupInterval = setInterval(async () => {
+    try {
+      const now = new Date();
+      const allEmails = await getEmailsFromRedis();
+      const activeEmails = allEmails.filter(email => new Date(email.expiresAt) > now);
+      const expiredCount = allEmails.length - activeEmails.length;
+      
+      if (expiredCount > 0) {
+        // Clear expired emails from Redis
+        if (redisConnected && client) {
+          await client.del(REDIS_KEYS.EMAILS);
+          for (const email of activeEmails) {
+            await saveEmailToRedis(email);
+          }
+        } else {
+          // Memory cleanup
+          const expiredEmails = allEmails.filter(email => new Date(email.expiresAt) <= now);
+          expiredEmails.forEach(email => {
+            memoryStore.emails.delete(email.id);
+            memoryStore.messages.delete(email.id);
+          });
+        }
+        
+        console.log(`🧹 Auto-cleanup: Removed ${expiredCount} expired emails`);
+        
+        // Log the cleanup
+        const log = {
+          id: uuidv4(),
+          action: 'AUTO_CLEANUP',
+          details: `Removed ${expiredCount} expired emails`,
+          timestamp: new Date()
+        };
+        await saveLogToRedis(log);
+        io.emit('newLog', log);
+      }
+    } catch (error) {
+      console.error('Auto-cleanup error:', error);
+    }
+  }, intervalMs);
+  
+  console.log(`🔄 Cleanup scheduler restarted: every ${intervalMinutes} minutes`);
+};
+
+// Start initial cleanup scheduler (default: every 30 minutes)
+const initialCleanupInterval = parseInt(process.env.AUTO_DELETE_TIME) || 30;
+if (process.env.AUTO_CLEANUP_ENABLED !== 'false') {
+  restartCleanupScheduler(initialCleanupInterval);
+}
+
+// Cleanup expired emails every hour (fallback)
 setInterval(async () => {
   try {
     const now = new Date();
@@ -839,9 +1141,11 @@ setInterval(async () => {
     
     if (expiredCount > 0) {
       // Clear expired emails from Redis
-      await client.del(REDIS_KEYS.EMAILS);
-      for (const email of activeEmails) {
-        await saveEmailToRedis(email);
+      if (redisConnected && client) {
+        await client.del(REDIS_KEYS.EMAILS);
+        for (const email of activeEmails) {
+          await saveEmailToRedis(email);
+        }
       }
       console.log(`🧹 Cleaned up ${expiredCount} expired emails`);
     }

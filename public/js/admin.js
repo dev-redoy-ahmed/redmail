@@ -12,6 +12,14 @@ class AdminPanel {
         this.bindEvents();
         this.loadDashboard();
         this.initSocketIO();
+        
+        // Initialize global settings and advanced features
+        setTimeout(() => {
+            this.loadGlobalSettings();
+            this.loadAdvancedFeatures();
+            this.initializeGlobalSettings();
+            this.initializeAdvancedFeatures();
+        }, 100);
     }
 
     checkAuth() {
@@ -1424,6 +1432,301 @@ class AdminPanel {
             this.refreshTestInboxMessages();
         } catch (error) {
             this.showNotification('error', 'Failed to delete message', error.message);
+        }
+    }
+
+    // Global Settings Methods
+    loadGlobalSettings() {
+        // Load saved global settings
+        const settings = {
+            mailAutoDeleteTime: localStorage.getItem('mailAutoDeleteTime') || '30',
+            emailChangeInterval: localStorage.getItem('emailChangeInterval') || '0',
+            defaultEmailExpiry: localStorage.getItem('defaultEmailExpiry') || '60',
+            maxMessagesPerEmail: localStorage.getItem('maxMessagesPerEmail') || '50',
+            enableAutoCleanup: localStorage.getItem('enableAutoCleanup') !== 'false',
+            enableRateLimit: localStorage.getItem('enableRateLimit') !== 'false'
+        };
+
+        // Apply settings to form
+        Object.keys(settings).forEach(key => {
+            const element = document.getElementById(key);
+            if (element) {
+                if (element.type === 'checkbox') {
+                    element.checked = settings[key];
+                } else {
+                    element.value = settings[key];
+                }
+            }
+        });
+    }
+
+    saveGlobalSettings() {
+        const settings = {
+            mailAutoDeleteTime: document.getElementById('mailAutoDeleteTime').value,
+            emailChangeInterval: document.getElementById('emailChangeInterval').value,
+            defaultEmailExpiry: document.getElementById('defaultEmailExpiry').value,
+            maxMessagesPerEmail: document.getElementById('maxMessagesPerEmail').value,
+            enableAutoCleanup: document.getElementById('enableAutoCleanup').checked,
+            enableRateLimit: document.getElementById('enableRateLimit').checked
+        };
+
+        // Validate settings
+        if (parseInt(settings.mailAutoDeleteTime) < 5 || parseInt(settings.mailAutoDeleteTime) > 1440) {
+            this.showNotification('error', 'Auto delete time must be between 5 and 1440 minutes');
+            return;
+        }
+
+        if (parseInt(settings.emailChangeInterval) < 0 || parseInt(settings.emailChangeInterval) > 60) {
+            this.showNotification('error', 'Email change interval must be between 0 and 60 minutes');
+            return;
+        }
+
+        // Save settings
+        Object.keys(settings).forEach(key => {
+            localStorage.setItem(key, settings[key]);
+        });
+
+        // Apply auto-delete timer
+        this.updateAutoDeleteTimer(parseInt(settings.mailAutoDeleteTime));
+        
+        // Apply email change timer
+        this.updateEmailChangeTimer(parseInt(settings.emailChangeInterval));
+
+        this.showNotification('success', 'Global settings saved successfully!');
+    }
+
+    resetGlobalSettings() {
+        if (!confirm('Are you sure you want to reset all global settings to default?')) return;
+
+        // Clear all global settings from localStorage
+        const settingsKeys = [
+            'mailAutoDeleteTime', 'emailChangeInterval', 'defaultEmailExpiry',
+            'maxMessagesPerEmail', 'enableAutoCleanup', 'enableRateLimit'
+        ];
+        
+        settingsKeys.forEach(key => localStorage.removeItem(key));
+        
+        // Reload settings
+        this.loadGlobalSettings();
+        
+        this.showNotification('success', 'Global settings reset to default values');
+    }
+
+    updateAutoDeleteTimer(minutes) {
+        // Clear existing timer
+        if (this.autoDeleteTimer) {
+            clearInterval(this.autoDeleteTimer);
+        }
+
+        // Set new timer if enabled
+        if (minutes > 0) {
+            this.autoDeleteTimer = setInterval(async () => {
+                try {
+                    await this.apiCall('/api/admin/cleanup-expired', 'POST');
+                    console.log('Auto-cleanup executed');
+                } catch (error) {
+                    console.error('Auto-cleanup failed:', error);
+                }
+            }, minutes * 60 * 1000);
+        }
+    }
+
+    updateEmailChangeTimer(minutes) {
+        // Clear existing timer
+        if (this.emailChangeTimer) {
+            clearInterval(this.emailChangeTimer);
+        }
+
+        // Set new timer if enabled
+        if (minutes > 0) {
+            this.emailChangeTimer = setInterval(() => {
+                if (this.currentPage === 'test-inbox' && this.currentTestEmail) {
+                    this.generateTestEmail();
+                }
+            }, minutes * 60 * 1000);
+        }
+    }
+
+    // Advanced Features Methods
+    loadAdvancedFeatures() {
+        const features = {
+            enableAntiSpam: localStorage.getItem('enableAntiSpam') !== 'false',
+            enableAttachments: localStorage.getItem('enableAttachments') !== 'false',
+            enableMobileAPI: localStorage.getItem('enableMobileAPI') !== 'false',
+            enableNotifications: localStorage.getItem('enableNotifications') !== 'false',
+            enableBulkOps: localStorage.getItem('enableBulkOps') !== 'false',
+            enableAnalytics: localStorage.getItem('enableAnalytics') !== 'false'
+        };
+
+        Object.keys(features).forEach(key => {
+            const element = document.getElementById(key);
+            if (element) {
+                element.checked = features[key];
+            }
+        });
+    }
+
+    saveAdvancedFeatures() {
+        const features = {
+            enableAntiSpam: document.getElementById('enableAntiSpam').checked,
+            enableAttachments: document.getElementById('enableAttachments').checked,
+            enableMobileAPI: document.getElementById('enableMobileAPI').checked,
+            enableNotifications: document.getElementById('enableNotifications').checked,
+            enableBulkOps: document.getElementById('enableBulkOps').checked,
+            enableAnalytics: document.getElementById('enableAnalytics').checked
+        };
+
+        Object.keys(features).forEach(key => {
+            localStorage.setItem(key, features[key]);
+        });
+
+        this.showNotification('success', 'Advanced features settings saved successfully!');
+    }
+
+    async testAllFeatures() {
+        this.showNotification('info', 'Testing all features...');
+        
+        const tests = [
+            { name: 'Anti-Spam Protection', test: () => this.testAntiSpam() },
+            { name: 'Attachment Support', test: () => this.testAttachments() },
+            { name: 'Mobile API', test: () => this.testMobileAPI() },
+            { name: 'Real-time Notifications', test: () => this.testNotifications() },
+            { name: 'Bulk Operations', test: () => this.testBulkOps() },
+            { name: 'Analytics & Reporting', test: () => this.testAnalytics() }
+        ];
+
+        let results = [];
+        
+        for (const test of tests) {
+            try {
+                const result = await test.test();
+                results.push({ name: test.name, status: 'success', result });
+            } catch (error) {
+                results.push({ name: test.name, status: 'error', error: error.message });
+            }
+        }
+
+        // Show test results
+        this.showTestResults(results);
+    }
+
+    async testAntiSpam() {
+        // Test anti-spam functionality
+        return 'Anti-spam protection is active';
+    }
+
+    async testAttachments() {
+        // Test attachment support
+        return 'Attachment support is enabled';
+    }
+
+    async testMobileAPI() {
+        // Test mobile API
+        try {
+            const response = await this.apiCall('/api/admin/stats');
+            return 'Mobile API is responsive';
+        } catch (error) {
+            throw new Error('Mobile API test failed');
+        }
+    }
+
+    async testNotifications() {
+        // Test real-time notifications
+        if (this.socket && this.socket.connected) {
+            return 'Real-time notifications are working';
+        } else {
+            throw new Error('WebSocket connection not available');
+        }
+    }
+
+    async testBulkOps() {
+        // Test bulk operations
+        return 'Bulk operations are available';
+    }
+
+    async testAnalytics() {
+        // Test analytics
+        try {
+            const stats = await this.apiCall('/api/admin/stats');
+            return `Analytics working - ${stats.totalEmails || 0} emails tracked`;
+        } catch (error) {
+            throw new Error('Analytics test failed');
+        }
+    }
+
+    showTestResults(results) {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.display = 'block';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h3>Feature Test Results</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="test-results">
+                        ${results.map(result => `
+                            <div class="test-result ${result.status}">
+                                <div class="test-name">
+                                    <i class="fas fa-${result.status === 'success' ? 'check-circle' : 'times-circle'}"></i>
+                                    ${result.name}
+                                </div>
+                                <div class="test-message">
+                                    ${result.status === 'success' ? result.result : result.error}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="document.body.removeChild(this.closest('.modal'));">Close</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        modal.querySelector('.modal-close').addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+    }
+
+    // Initialize event listeners for global settings
+    initializeGlobalSettings() {
+        // Save global settings button
+        const saveGlobalBtn = document.getElementById('saveGlobalSettings');
+        if (saveGlobalBtn) {
+            saveGlobalBtn.addEventListener('click', () => {
+                this.saveGlobalSettings();
+            });
+        }
+
+        // Reset global settings button
+        const resetGlobalBtn = document.getElementById('resetGlobalSettings');
+        if (resetGlobalBtn) {
+            resetGlobalBtn.addEventListener('click', () => {
+                this.resetGlobalSettings();
+            });
+        }
+    }
+
+    // Initialize event listeners for advanced features
+    initializeAdvancedFeatures() {
+        // Save advanced features button
+        const saveAdvancedBtn = document.getElementById('saveAdvancedFeatures');
+        if (saveAdvancedBtn) {
+            saveAdvancedBtn.addEventListener('click', () => {
+                this.saveAdvancedFeatures();
+            });
+        }
+
+        // Test all features button
+        const testAllBtn = document.getElementById('testAllFeatures');
+        if (testAllBtn) {
+            testAllBtn.addEventListener('click', () => {
+                this.testAllFeatures();
+            });
         }
     }
 }

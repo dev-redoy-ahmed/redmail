@@ -578,6 +578,80 @@ body {
     background: var(--black);
 }
 
+/* Feature Cards */
+.feature-card {
+    background: var(--gray-900);
+    border: 1px solid var(--gray-800);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    text-align: center;
+    transition: all var(--transition-fast);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.feature-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--primary-color);
+}
+
+.feature-icon {
+    font-size: 2.5rem;
+    color: var(--primary-color);
+    margin-bottom: var(--spacing-md);
+}
+
+.feature-card h5 {
+    color: var(--white);
+    margin-bottom: var(--spacing-sm);
+    font-weight: 600;
+}
+
+.feature-card p {
+    color: var(--gray-300);
+    font-size: 0.9rem;
+    margin-bottom: var(--spacing-md);
+    flex-grow: 1;
+}
+
+/* Grid Layout for Features */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: calc(var(--spacing-sm) * -1);
+}
+
+.col-md-4, .col-md-6 {
+    padding: var(--spacing-sm);
+}
+
+.col-md-4 {
+    flex: 0 0 33.333333%;
+    max-width: 33.333333%;
+}
+
+.col-md-6 {
+    flex: 0 0 50%;
+    max-width: 50%;
+}
+
+/* Global Settings Styles */
+.card-header small {
+    display: block;
+    margin-top: var(--spacing-xs);
+    font-size: 0.85rem;
+    opacity: 0.8;
+    color: var(--gray-400);
+}
+
+/* Button Spacing */
+.ml-2 {
+    margin-left: var(--spacing-sm);
+}
+
 /* Test results styles */
 .test-results {
     margin-top: 1rem;
@@ -1162,5 +1236,19 @@ body {
     .modal-content {
         margin: 1rem;
         max-width: calc(100% - 2rem);
+    }
+    
+    .col-md-4, .col-md-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    
+    .feature-card {
+        margin-bottom: var(--spacing-md);
+    }
+    
+    .ml-2 {
+        margin-left: 0;
+        margin-top: var(--spacing-sm);
     }
 }
