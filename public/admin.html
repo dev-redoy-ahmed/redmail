@@ -44,18 +44,18 @@
                     </a>
                 </div>
                 <div class="nav-item">
+                    <a href="#test-inbox" class="nav-link" data-page="test-inbox">
+                        <i class="fas fa-flask"></i>
+                        Test Inbox
+                    </a>
+                </div>
+                <div class="nav-item">
                     <a href="#api" class="nav-link" data-page="api">
                         <i class="fas fa-code"></i>
                         API Documentation
                     </a>
                 </div>
             </nav>
-            
-            <!-- Test Button -->
-            <button class="test-button" id="testTempMail">
-                <i class="fas fa-flask"></i>
-                Test Temporary Mail
-            </button>
         </aside>
         
         <!-- Main Content -->
@@ -292,6 +292,112 @@
                                 <i class="fas fa-check"></i>
                                 DNS records have been configured for oplex.online
                             </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Test Inbox Content -->
+                <div id="test-inbox-content" class="page-content">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Test Inbox - Temporary Email Testing</h3>
+                            <div class="card-actions">
+                                <button class="btn btn-primary" id="generateNewTestEmail">
+                                    <i class="fas fa-plus"></i>
+                                    Generate New Email
+                                </button>
+                                <button class="btn btn-success" id="refreshTestInbox">
+                                    <i class="fas fa-sync-alt"></i>
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- Current Test Email Display -->
+                            <div id="currentTestEmail" class="current-email-display">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle"></i>
+                                    Click "Generate New Email" to create a test temporary email address.
+                                </div>
+                            </div>
+                            
+                            <!-- Test Email Messages -->
+                            <div id="testEmailMessages" class="test-messages-section" style="display: none;">
+                                <h4>Received Messages</h4>
+                                <div class="messages-container" id="messagesContainer">
+                                    <div class="no-messages">
+                                        <i class="fas fa-inbox"></i>
+                                        <p>No messages received yet</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Test Email History -->
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h3 class="card-title">Test Email History</h3>
+                            <div class="card-actions">
+                                <button class="btn btn-warning" id="clearTestHistory">
+                                    <i class="fas fa-trash"></i>
+                                    Clear History
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-container">
+                                <table class="table" id="testHistoryTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Email Address</th>
+                                            <th>Created At</th>
+                                            <th>Expired At</th>
+                                            <th>Messages Received</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="testHistoryTableBody">
+                                        <tr>
+                                            <td colspan="6" class="text-center">No test emails created yet</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Test Configuration -->
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h3 class="card-title">Test Configuration</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label class="form-label">Auto-Generate Interval (Minutes)</label>
+                                <input type="number" class="form-input" id="testAutoGenerateInterval" value="0" min="0" max="60">
+                                <small class="form-help">Set to 0 to disable auto-generation. Max 60 minutes.</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Test Email Expiry (Minutes)</label>
+                                <input type="number" class="form-input" id="testEmailExpiry" value="10" min="1" max="60">
+                                <small class="form-help">How long test emails remain active (1-60 minutes)</small>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Auto-Refresh Messages</label>
+                                <div class="toggle-switch">
+                                    <input type="checkbox" id="testAutoRefresh" checked>
+                                    <label for="testAutoRefresh" class="toggle-label">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <small class="form-help">Automatically refresh messages every 5 seconds</small>
+                            </div>
+                            <button class="btn btn-success" id="saveTestConfig">
+                                <i class="fas fa-save"></i>
+                                Save Configuration
+                            </button>
                         </div>
                     </div>
                 </div>

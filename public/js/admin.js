@@ -176,10 +176,7 @@ class AdminPanel {
             this.logout();
         });
 
-        // Test button
-        document.getElementById('testTempMail').addEventListener('click', () => {
-            this.showTestModal();
-        });
+        // Test inbox functionality will be bound when navigating to test-inbox page
 
         // Test connectivity button
         document.getElementById('testConnectivity').addEventListener('click', () => {
@@ -248,6 +245,9 @@ class AdminPanel {
                 break;
             case 'settings':
                 this.loadSettings();
+                break;
+            case 'test-inbox':
+                this.loadTestInbox();
                 break;
         }
     }
@@ -922,8 +922,422 @@ class AdminPanel {
                     this.loadDashboard();
                 } else if (this.currentPage === 'logs') {
                     this.loadLogs();
+                } else if (this.currentPage === 'test-inbox') {
+                    this.refreshTestInboxMessages();
                 }
             }, interval * 1000);
+        }
+    }
+
+    // Test Inbox Methods
+    loadTestInbox() {
+        this.bindTestInboxEvents();
+        this.loadTestHistory();
+        this.loadTestConfig();
+        
+        // Start auto-refresh if enabled
+        const autoRefresh = localStorage.getItem('testAutoRefresh');
+        if (autoRefresh !== 'false') {
+            this.startTestAutoRefresh();
+        }
+    }
+
+    bindTestInboxEvents() {
+        // Generate new test email
+        const generateBtn = document.getElementById('generateNewTestEmail');
+        if (generateBtn) {
+            generateBtn.addEventListener('click', () => {
+                this.generateTestEmail();
+            });
+        }
+
+        // Refresh test inbox
+        const refreshBtn = document.getElementById('refreshTestInbox');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.refreshTestInboxMessages();
+            });
+        }
+
+        // Clear test history
+        const clearBtn = document.getElementById('clearTestHistory');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                this.clearTestHistory();
+            });
+        }
+
+        // Save test config
+        const saveConfigBtn = document.getElementById('saveTestConfig');
+        if (saveConfigBtn) {
+            saveConfigBtn.addEventListener('click', () => {
+                this.saveTestConfig();
+            });
+        }
+
+        // Auto-refresh toggle
+        const autoRefreshToggle = document.getElementById('testAutoRefresh');
+        if (autoRefreshToggle) {
+            autoRefreshToggle.addEventListener('change', (e) => {
+                localStorage.setItem('testAutoRefresh', e.target.checked);
+                if (e.target.checked) {
+                    this.startTestAutoRefresh();
+                } else {
+                    this.stopTestAutoRefresh();
+                }
+            });
+        }
+    }
+
+    async generateTestEmail() {
+        const generateBtn = document.getElementById('generateNewTestEmail');
+        const currentEmailDiv = document.getElementById('currentTestEmail');
+        
+        generateBtn.disabled = true;
+        generateBtn.innerHTML = '<span class="loading"></span> Generating...';
+        
+        try {
+            const response = await this.apiCall('/api/temp-email/generate', 'POST');
+            
+            // Store current test email
+            this.currentTestEmail = response;
+            localStorage.setItem('currentTestEmail', JSON.stringify(response));
+            
+            // Update display
+            currentEmailDiv.innerHTML = `
+                <div class="current-email-card">
+                    <div class="email-header">
+                        <h4><i class="fas fa-envelope"></i> Current Test Email</h4>
+                        <div class="email-actions">
+                            <button class="btn btn-sm btn-secondary" onclick="navigator.clipboard.writeText('${response.email}')">
+                                <i class="fas fa-copy"></i> Copy
+                            </button>
+                            <button class="btn btn-sm btn-warning" id="deleteCurrentTestEmail">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                    <div class="email-details">
+                        <div class="email-address">
+                            <strong>Email:</strong> <code>${response.email}</code>
+                        </div>
+                        <div class="email-info">
+                            <span class="email-created"><i class="fas fa-clock"></i> Created: ${new Date(response.createdAt).toLocaleString()}</span>
+                            <span class="email-expires"><i class="fas fa-hourglass-end"></i> Expires: ${new Date(response.expiresAt).toLocaleString()}</span>
+                        </div>
+                        <div class="email-status">
+                            <span class="status-badge status-active">Active</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Show messages section
+            document.getElementById('testEmailMessages').style.display = 'block';
+            
+            // Bind delete button
+            document.getElementById('deleteCurrentTestEmail').addEventListener('click', () => {
+                this.deleteCurrentTestEmail();
+            });
+            
+            // Subscribe to real-time updates
+            if (this.socket) {
+                this.socket.emit('subscribe:email', response.email);
+            }
+            
+            // Add to history
+            this.addToTestHistory(response);
+            
+            // Start checking for messages
+            this.startMessagePolling();
+            
+            this.showNotification('success', 'Test email generated successfully!', `Email: ${response.email}`);
+            
+        } catch (error) {
+            this.showNotification('error', 'Failed to generate test email', error.message);
+        } finally {
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = '<i class="fas fa-plus"></i> Generate New Email';
+        }
+    }
+
+    async deleteCurrentTestEmail() {
+        if (!this.currentTestEmail) return;
+        
+        if (!confirm('Are you sure you want to delete this test email?')) return;
+        
+        try {
+            await this.apiCall(`/api/temp-email/${this.currentTestEmail.id}`, 'DELETE');
+            
+            // Clear current email
+            this.currentTestEmail = null;
+            localStorage.removeItem('currentTestEmail');
+            
+            // Update display
+            document.getElementById('currentTestEmail').innerHTML = `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    Click "Generate New Email" to create a test temporary email address.
+                </div>
+            `;
+            
+            // Hide messages section
+            document.getElementById('testEmailMessages').style.display = 'none';
+            
+            // Stop message polling
+            this.stopMessagePolling();
+            
+            // Update history
+            this.loadTestHistory();
+            
+            this.showNotification('success', 'Test email deleted successfully!');
+            
+        } catch (error) {
+            this.showNotification('error', 'Failed to delete test email', error.message);
+        }
+    }
+
+    async refreshTestInboxMessages() {
+        if (!this.currentTestEmail) return;
+        
+        try {
+            const messages = await this.apiCall(`/api/temp-email/${this.currentTestEmail.id}/messages`);
+            this.displayTestMessages(messages);
+        } catch (error) {
+            console.error('Failed to refresh messages:', error);
+        }
+    }
+
+    displayTestMessages(messages) {
+        const container = document.getElementById('messagesContainer');
+        
+        if (!messages || messages.length === 0) {
+            container.innerHTML = `
+                <div class="no-messages">
+                    <i class="fas fa-inbox"></i>
+                    <p>No messages received yet</p>
+                    <small>Send an email to ${this.currentTestEmail?.email || 'your test email'} to see it here</small>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = messages.map(message => `
+            <div class="message-card">
+                <div class="message-header">
+                    <div class="message-from">
+                        <i class="fas fa-user"></i>
+                        <strong>From:</strong> ${message.from || 'Unknown'}
+                    </div>
+                    <div class="message-date">
+                        <i class="fas fa-clock"></i>
+                        ${new Date(message.receivedAt).toLocaleString()}
+                    </div>
+                </div>
+                <div class="message-subject">
+                    <i class="fas fa-envelope"></i>
+                    <strong>Subject:</strong> ${message.subject || 'No Subject'}
+                </div>
+                <div class="message-content">
+                    <div class="message-text">
+                        ${message.text || message.html || 'No content'}
+                    </div>
+                </div>
+                <div class="message-actions">
+                    <button class="btn btn-sm btn-primary" onclick="this.viewFullMessage('${message.id}')">
+                        <i class="fas fa-eye"></i> View Full
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="this.deleteMessage('${message.id}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    startMessagePolling() {
+        this.stopMessagePolling();
+        
+        this.messagePollingTimer = setInterval(() => {
+            this.refreshTestInboxMessages();
+        }, 5000); // Check every 5 seconds
+    }
+
+    stopMessagePolling() {
+        if (this.messagePollingTimer) {
+            clearInterval(this.messagePollingTimer);
+            this.messagePollingTimer = null;
+        }
+    }
+
+    addToTestHistory(email) {
+        let history = JSON.parse(localStorage.getItem('testEmailHistory') || '[]');
+        history.unshift({
+            ...email,
+            messagesReceived: 0,
+            status: 'active'
+        });
+        
+        // Keep only last 50 entries
+        if (history.length > 50) {
+            history = history.slice(0, 50);
+        }
+        
+        localStorage.setItem('testEmailHistory', JSON.stringify(history));
+        this.loadTestHistory();
+    }
+
+    loadTestHistory() {
+        const history = JSON.parse(localStorage.getItem('testEmailHistory') || '[]');
+        const tbody = document.getElementById('testHistoryTableBody');
+        
+        if (history.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No test emails created yet</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = history.map(email => {
+            const isExpired = new Date() > new Date(email.expiresAt);
+            const status = isExpired ? 'expired' : 'active';
+            const statusClass = isExpired ? 'status-expired' : 'status-active';
+            
+            return `
+                <tr>
+                    <td><code>${email.email}</code></td>
+                    <td>${new Date(email.createdAt).toLocaleString()}</td>
+                    <td>${new Date(email.expiresAt).toLocaleString()}</td>
+                    <td>${email.messagesReceived || 0}</td>
+                    <td><span class="status-badge ${statusClass}">${status}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="adminPanel.viewTestEmailMessages('${email.id}')">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="adminPanel.deleteTestEmailFromHistory('${email.id}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    async viewTestEmailMessages(emailId) {
+        try {
+            const messages = await this.apiCall(`/api/temp-email/${emailId}/messages`);
+            
+            // Create modal to show messages
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.display = 'block';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Email Messages</h3>
+                        <button class="modal-close">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        ${messages.length === 0 ? 
+                            '<p>No messages found for this email.</p>' : 
+                            messages.map(msg => `
+                                <div class="message-card">
+                                    <strong>From:</strong> ${msg.from}<br>
+                                    <strong>Subject:</strong> ${msg.subject}<br>
+                                    <strong>Date:</strong> ${new Date(msg.receivedAt).toLocaleString()}<br>
+                                    <div class="mt-2">${msg.text || msg.html}</div>
+                                </div>
+                            `).join('')
+                        }
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            modal.querySelector('.modal-close').addEventListener('click', () => {
+                document.body.removeChild(modal);
+            });
+            
+        } catch (error) {
+            this.showNotification('error', 'Failed to load messages', error.message);
+        }
+    }
+
+    deleteTestEmailFromHistory(emailId) {
+        if (!confirm('Remove this email from history?')) return;
+        
+        let history = JSON.parse(localStorage.getItem('testEmailHistory') || '[]');
+        history = history.filter(email => email.id !== emailId);
+        localStorage.setItem('testEmailHistory', JSON.stringify(history));
+        this.loadTestHistory();
+        
+        this.showNotification('success', 'Email removed from history');
+    }
+
+    clearTestHistory() {
+        if (!confirm('Are you sure you want to clear all test email history?')) return;
+        
+        localStorage.removeItem('testEmailHistory');
+        this.loadTestHistory();
+        
+        this.showNotification('success', 'Test email history cleared');
+    }
+
+    loadTestConfig() {
+        // Load saved configuration
+        const autoGenerate = localStorage.getItem('testAutoGenerateInterval') || '0';
+        const emailExpiry = localStorage.getItem('testEmailExpiry') || '10';
+        const autoRefresh = localStorage.getItem('testAutoRefresh');
+        
+        document.getElementById('testAutoGenerateInterval').value = autoGenerate;
+        document.getElementById('testEmailExpiry').value = emailExpiry;
+        document.getElementById('testAutoRefresh').checked = autoRefresh !== 'false';
+    }
+
+    saveTestConfig() {
+        const autoGenerate = document.getElementById('testAutoGenerateInterval').value;
+        const emailExpiry = document.getElementById('testEmailExpiry').value;
+        const autoRefresh = document.getElementById('testAutoRefresh').checked;
+        
+        localStorage.setItem('testAutoGenerateInterval', autoGenerate);
+        localStorage.setItem('testEmailExpiry', emailExpiry);
+        localStorage.setItem('testAutoRefresh', autoRefresh);
+        
+        // Update auto-generation
+        this.updateAutoGeneration(parseInt(autoGenerate));
+        
+        this.showNotification('success', 'Test configuration saved successfully!');
+    }
+
+    updateAutoGeneration(intervalMinutes) {
+        // Clear existing auto-generation
+        if (this.autoGenerateTimer) {
+            clearInterval(this.autoGenerateTimer);
+        }
+        
+        // Set new auto-generation if enabled
+        if (intervalMinutes > 0) {
+            this.autoGenerateTimer = setInterval(() => {
+                if (this.currentPage === 'test-inbox') {
+                    this.generateTestEmail();
+                }
+            }, intervalMinutes * 60 * 1000);
+        }
+    }
+
+    startTestAutoRefresh() {
+        this.stopTestAutoRefresh();
+        
+        this.testAutoRefreshTimer = setInterval(() => {
+            if (this.currentPage === 'test-inbox') {
+                this.refreshTestInboxMessages();
+            }
+        }, 5000);
+    }
+
+    stopTestAutoRefresh() {
+        if (this.testAutoRefreshTimer) {
+            clearInterval(this.testAutoRefreshTimer);
+            this.testAutoRefreshTimer = null;
         }
     }
 }
