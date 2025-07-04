@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-VPS_IP="206.189.94.221"
+VPS_IP="167.99.70.90"
 DOMAIN="oplex.online"
 APP_DIR="/var/www/redmail"
 APP_NAME="redmail"

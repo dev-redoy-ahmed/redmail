@@ -3,7 +3,7 @@
 ## 📋 Prerequisites
 
 ### VPS Information
-- **IP Address**: 206.189.94.221
+- **IP Address**: 167.99.70.90
 - **Domain**: oplex.online
 - **OS**: Ubuntu/Debian (recommended)
 
@@ -16,7 +16,7 @@ Add these records to your domain registrar (oplex.online):
 # A Record
 Type: A
 Name: @
-Value: 206.189.94.221
+Value: 167.99.70.90
 TTL: 3600
 
 # MX Record
@@ -29,7 +29,7 @@ TTL: 3600
 # SPF Record
 Type: TXT
 Name: @
-Value: "v=spf1 ip4:206.189.94.221 ~all"
+Value: "v=spf1 ip4:167.99.70.90 ~all"
 TTL: 3600
 
 # DMARC Record (Optional but recommended)
@@ -76,7 +76,7 @@ cd /var/www/redmail
 ### 1. Upload Files
 ```bash
 # Option 1: Using SCP from local machine
-scp -r c:\Users\Redoy\ Ahmed\redmail/* root@206.189.94.221:/var/www/redmail/
+scp -r c:\Users\Redoy\ Ahmed\redmail/* root@167.99.70.90:/var/www/redmail/
 
 # Option 2: Using Git (if you have a repository)
 git clone <your-repo-url> .
@@ -149,8 +149,8 @@ sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -
 
 After deployment, access your application:
 
-- **Admin Panel**: http://206.189.94.221:3000/admin
-- **API Base**: http://206.189.94.221:3000/api
+- **Admin Panel**: http://167.99.70.90:3000/admin
+- **API Base**: http://167.99.70.90:3000/api
 - **Domain Access**: http://oplex.online:3000/admin (after DNS propagation)
 
 ## ✅ Verification Steps
@@ -222,7 +222,7 @@ sudo apt install nginx -y
 1. **Port 25 Blocked**
    ```bash
    # Test SMTP port
-   telnet 206.189.94.221 25
+   telnet 167.99.70.90 25
    ```
 
 2. **DNS Not Propagated**

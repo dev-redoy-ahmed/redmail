@@ -56,7 +56,7 @@ Default login: `admin` / `password`
 ## 🌐 VPS Deployment
 
 ### Current Configuration
-- **VPS IP**: 206.189.94.221
+- **VPS IP**: 167.99.70.90
 - **Domain**: oplex.online
 - **SMTP Port**: 25
 - **Web Port**: 3000
@@ -69,18 +69,18 @@ Default login: `admin` / `password`
    upload-to-vps.bat
    
    # On Linux/Mac
-   scp -r ./* root@206.189.94.221:/var/www/redmail/
+   scp -r ./* root@167.99.70.90:/var/www/redmail/
    ```
 
 2. **Run deployment script**:
    ```bash
-   ssh root@206.189.94.221
+   ssh root@167.99.70.90
    cd /var/www/redmail
    bash deploy.sh
    ```
 
 3. **Access your live application**:
-   - Admin Panel: http://206.189.94.221:3000/admin
+   - Admin Panel: http://167.99.70.90:3000/admin
    - After DNS: http://oplex.online:3000/admin
 
 ### DNS Configuration Required
@@ -91,7 +91,7 @@ Add these DNS records to your domain registrar:
 # A Record
 Type: A
 Name: @
-Value: 206.189.94.221
+Value: 167.99.70.90
 
 # MX Record
 Type: MX
@@ -102,7 +102,7 @@ Priority: 10
 # SPF Record
 Type: TXT
 Name: @
-Value: "v=spf1 ip4:206.189.94.221 ~all"
+Value: "v=spf1 ip4:167.99.70.90 ~all"
 ```
 
 ## 📋 Configuration
@@ -119,10 +119,10 @@ const CONFIG = {
   
   // Email Configuration
   EMAIL_DOMAIN: 'oplex.online',
-  VPS_IP: '206.189.94.221',
+  VPS_IP: '167.99.70.90',
   
   // Redis Configuration
-  REDIS_HOST: '206.189.94.221',
+  REDIS_HOST: '167.99.70.90',
   REDIS_PORT: 6379,
   
   // SMTP Configuration

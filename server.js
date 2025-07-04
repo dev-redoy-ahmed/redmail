@@ -28,7 +28,7 @@ const CONFIG = {
   ALLOWED_ORIGINS: [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-    'http://206.189.94.221:3000',
+    'http://167.99.70.90:3000',
     'https://oplex.online',
     'https://www.oplex.online'
   ],
@@ -36,10 +36,10 @@ const CONFIG = {
   // Email Configuration
   EMAIL_DOMAIN: 'oplex.online',
   EMAIL_RETENTION_HOURS: 24,
-  VPS_IP: '206.189.94.221',
+  VPS_IP: '167.99.70.90',
   
   // Redis Configuration
-  REDIS_HOST: '206.189.94.221',
+  REDIS_HOST: '167.99.70.90',
   REDIS_PORT: 6379,
   REDIS_PASSWORD: '',
   

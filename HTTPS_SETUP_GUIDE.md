@@ -10,8 +10,8 @@ This guide will help you secure your RedMail application with HTTPS using SSL/TL
 
 ```bash
 # Upload and run the SSL setup script
-scp ssl-setup.sh root@206.189.94.221:/var/www/redmail/
-ssh root@206.189.94.221
+scp ssl-setup.sh root@167.99.70.90:/var/www/redmail/
+ssh root@167.99.70.90
 cd /var/www/redmail
 sudo bash ssl-setup.sh
 ```

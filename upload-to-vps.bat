@@ -5,7 +5,7 @@ REM This script uploads files to VPS using SCP
 setlocal enabledelayedexpansion
 
 REM Configuration
-set VPS_IP=206.189.94.221
+set VPS_IP=167.99.70.90
 set VPS_USER=root
 set LOCAL_PATH=%~dp0
 set REMOTE_PATH=/var/www/redmail
