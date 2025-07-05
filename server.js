@@ -97,7 +97,24 @@ const CONFIG = {
   MAX_ATTACHMENTS_PER_EMAIL: 10,
   ALLOWED_ATTACHMENT_TYPES: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar'],
   ATTACHMENT_STORAGE_PATH: './attachments',
-  ATTACHMENT_CLEANUP_HOURS: 24
+  ATTACHMENT_CLEANUP_HOURS: 24,
+  
+  // API Key Configuration
+  API_KEYS: {
+    'redmail-api-key-2024-production': {
+      name: 'Production API Key',
+      permissions: ['read', 'write', 'delete'],
+      rateLimit: 1000, // requests per hour
+      createdAt: new Date().toISOString()
+    },
+    'redmail-readonly-key-2024': {
+      name: 'Read-only API Key',
+      permissions: ['read'],
+      rateLimit: 500,
+      createdAt: new Date().toISOString()
+    }
+  },
+  REQUIRE_API_KEY: true // Set to false to disable API key requirement
 };
 
 const app = express();
@@ -260,6 +277,55 @@ app.use(helmet({
     }
   }
 }));
+
+// API Key Authentication Middleware
+const authenticateApiKey = (req, res, next) => {
+  // Skip API key check for web interface routes
+  if (!req.path.startsWith('/api/') || !CONFIG.REQUIRE_API_KEY) {
+    return next();
+  }
+
+  const apiKey = req.headers['x-api-key'] || req.query.api_key;
+  
+  if (!apiKey) {
+    return res.status(401).json({
+      error: 'API key required',
+      message: 'Please provide an API key in the X-API-Key header or api_key query parameter'
+    });
+  }
+
+  const keyConfig = CONFIG.API_KEYS[apiKey];
+  if (!keyConfig) {
+    return res.status(401).json({
+      error: 'Invalid API key',
+      message: 'The provided API key is not valid'
+    });
+  }
+
+  // Check permissions based on HTTP method
+  const method = req.method.toLowerCase();
+  const requiredPermission = method === 'get' ? 'read' : 
+                           method === 'post' || method === 'put' || method === 'patch' ? 'write' : 
+                           method === 'delete' ? 'delete' : 'read';
+
+  if (!keyConfig.permissions.includes(requiredPermission)) {
+    return res.status(403).json({
+      error: 'Insufficient permissions',
+      message: `This API key does not have '${requiredPermission}' permission`
+    });
+  }
+
+  // Add API key info to request for rate limiting
+  req.apiKey = {
+    key: apiKey,
+    config: keyConfig
+  };
+
+  next();
+};
+
+// Apply API key authentication to all API routes
+app.use('/api/', authenticateApiKey);
 
 // Trust proxy for Nginx reverse proxy
 app.set('trust proxy', 1);
@@ -2546,6 +2612,100 @@ app.get('/api/stats/email/:emailId', apiLimiter, async (req, res) => {
   } catch (error) {
     console.error('Get email stats error:', error);
     res.status(500).json({ error: 'Failed to fetch email statistics' });
+  }
+});
+
+// Get system statistics
+app.get('/api/stats', apiLimiter, async (req, res) => {
+  try {
+    let totalEmails = 0;
+    let totalMessages = 0;
+    let activeEmails = 0;
+    let messagesLast24h = 0;
+    let domainsCount = 0;
+    
+    const now = new Date();
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    if (redisConnected && client) {
+      // Get stats from Redis
+      try {
+        const emailKeys = await client.keys('email:*');
+        totalEmails = emailKeys.length;
+        
+        const domainKeys = await client.keys('domain:*');
+        domainsCount = domainKeys.length;
+        
+        for (const emailKey of emailKeys) {
+          const email = await client.get(emailKey);
+          if (email) {
+            const emailData = JSON.parse(email);
+            if (new Date(emailData.expiresAt) > now) {
+              activeEmails++;
+            }
+            
+            // Count messages for this email
+            const messageKeys = await client.keys(`message:${emailData.id}:*`);
+            totalMessages += messageKeys.length;
+            
+            // Count recent messages
+            for (const messageKey of messageKeys) {
+              const message = await client.get(messageKey);
+              if (message) {
+                const messageData = JSON.parse(message);
+                if (new Date(messageData.receivedAt) > yesterday) {
+                  messagesLast24h++;
+                }
+              }
+            }
+          }
+        }
+      } catch (redisError) {
+        console.warn('Redis stats error, falling back to memory:', redisError.message);
+        // Fall back to memory store
+        totalEmails = memoryStore.emails.size;
+        activeEmails = Array.from(memoryStore.emails.values()).filter(email => new Date(email.expiresAt) > now).length;
+        domainsCount = memoryStore.domains.size;
+        
+        for (const [emailId, messages] of memoryStore.messages) {
+          totalMessages += messages.length;
+          messagesLast24h += messages.filter(msg => new Date(msg.receivedAt) > yesterday).length;
+        }
+      }
+    } else {
+      // Use memory store
+      totalEmails = memoryStore.emails.size;
+      activeEmails = Array.from(memoryStore.emails.values()).filter(email => new Date(email.expiresAt) > now).length;
+      domainsCount = memoryStore.domains.size;
+      
+      for (const [emailId, messages] of memoryStore.messages) {
+        totalMessages += messages.length;
+        messagesLast24h += messages.filter(msg => new Date(msg.receivedAt) > yesterday).length;
+      }
+    }
+    
+    const stats = {
+      totalEmails,
+      totalMessages,
+      activeEmails,
+      domainsCount,
+      messagesLast24h,
+      systemInfo: {
+        redisConnected,
+        uptime: process.uptime(),
+        nodeVersion: process.version,
+        platform: process.platform
+      },
+      timestamp: now.toISOString()
+    };
+    
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('Get system stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch system statistics' });
   }
 });
 

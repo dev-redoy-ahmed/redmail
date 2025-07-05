@@ -166,58 +166,401 @@
         <section id="api" class="api-section">
             <div class="container">
                 <h2>API Documentation</h2>
-                <div class="api-content">
-                    <div class="api-endpoints">
-                        <h3>Available Endpoints</h3>
-                        
-                        <div class="endpoint">
-                            <div class="method post">POST</div>
-                            <div class="url">/api/temp-email/generate</div>
-                            <div class="description">Generate a random temporary email</div>
+                
+                <!-- Authentication Section -->
+                <div class="api-auth">
+                    <h3>🔐 Authentication</h3>
+                    <div class="auth-info">
+                        <p>All API endpoints require authentication using an API key. Include your API key in one of the following ways:</p>
+                        <div class="auth-methods">
+                            <div class="auth-method">
+                                <h4>Header (Recommended)</h4>
+                                <code>X-API-Key: your-api-key-here</code>
+                            </div>
+                            <div class="auth-method">
+                                <h4>Query Parameter</h4>
+                                <code>?api_key=your-api-key-here</code>
+                            </div>
                         </div>
-                        
-                        <div class="endpoint">
-                            <div class="method post">POST</div>
-                            <div class="url">/api/temp-email/create-custom</div>
-                            <div class="description">Create a custom temporary email</div>
-                        </div>
-                        
-                        <div class="endpoint">
-                            <div class="method get">GET</div>
-                            <div class="url">/api/domains/available</div>
-                            <div class="description">Get available domains for email creation</div>
-                        </div>
-                        
-                        <div class="endpoint">
-                            <div class="method get">GET</div>
-                            <div class="url">/api/inbox/:emailId</div>
-                            <div class="description">Get inbox messages for specific email</div>
-                        </div>
-                        
-                        <div class="endpoint">
-                            <div class="method get">GET</div>
-                            <div class="url">/api/message/:messageId</div>
-                            <div class="description">Get specific message details</div>
-                        </div>
-                        
-                        <div class="endpoint">
-                            <div class="method delete">DELETE</div>
-                            <div class="url">/api/message/:messageId</div>
-                            <div class="description">Delete a specific message</div>
-                        </div>
-                        
-                        <div class="endpoint">
-                            <div class="method delete">DELETE</div>
-                            <div class="url">/api/inbox/:emailId/clear</div>
-                            <div class="description">Clear all messages from inbox</div>
-                        </div>
-                        
-                        <div class="endpoint">
-                            <div class="method get">GET</div>
-                            <div class="url">/api/search/messages</div>
-                            <div class="description">Search messages across emails</div>
+                        <div class="api-keys">
+                            <h4>Available API Keys</h4>
+                            <div class="key-item">
+                                <strong>Production Key:</strong> <code>redmail-api-key-2024-production</code>
+                                <span class="permissions">Permissions: Read, Write, Delete</span>
+                            </div>
+                            <div class="key-item">
+                                <strong>Read-only Key:</strong> <code>redmail-readonly-key-2024</code>
+                                <span class="permissions">Permissions: Read only</span>
+                            </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- API Endpoints -->
+                <div class="api-content">
+                    <h3>📋 Available Endpoints</h3>
+                    
+                    <!-- Email Management -->
+                    <div class="endpoint-group">
+                        <h4>Email Management</h4>
+                        
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method post">POST</span>
+                                <span class="url">/api/temp-email/generate</span>
+                            </div>
+                            <div class="endpoint-description">Generate a random temporary email address</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X POST "http://localhost:3000/api/temp-email/generate" \
+  -H "X-API-Key: redmail-api-key-2024-production" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "random"}'</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "email": "abc123@oplex.online",
+  "emailId": "uuid-here",
+  "expiresAt": "2024-01-01T12:00:00Z",
+  "domain": "oplex.online"
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method post">POST</span>
+                                <span class="url">/api/temp-email/create-custom</span>
+                            </div>
+                            <div class="endpoint-description">Create a custom temporary email address</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X POST "http://localhost:3000/api/temp-email/create-custom" \
+  -H "X-API-Key: redmail-api-key-2024-production" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "myemail",
+    "domain": "oplex.online",
+    "type": "custom"
+  }'</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "email": "myemail@oplex.online",
+  "emailId": "uuid-here",
+  "expiresAt": "2024-01-01T12:00:00Z",
+  "domain": "oplex.online"
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Domain Management -->
+                    <div class="endpoint-group">
+                        <h4>Domain Management</h4>
+                        
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method get">GET</span>
+                                <span class="url">/api/domains/available</span>
+                            </div>
+                            <div class="endpoint-description">Get list of available domains for email creation</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X GET "http://localhost:3000/api/domains/available" \
+  -H "X-API-Key: redmail-readonly-key-2024"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "domains": [
+    {
+      "name": "oplex.online",
+      "status": "active",
+      "emailsGenerated": 150
+    },
+    {
+      "name": "tempmail.dev",
+      "status": "active",
+      "emailsGenerated": 89
+    }
+  ]
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Message Management -->
+                    <div class="endpoint-group">
+                        <h4>Message Management</h4>
+                        
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method get">GET</span>
+                                <span class="url">/api/inbox/:emailId</span>
+                            </div>
+                            <div class="endpoint-description">Get inbox messages for a specific email address</div>
+                            <div class="endpoint-params">
+                                <strong>Query Parameters:</strong>
+                                <ul>
+                                    <li><code>page</code> - Page number (default: 1)</li>
+                                    <li><code>limit</code> - Messages per page (default: 50)</li>
+                                </ul>
+                            </div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X GET "http://localhost:3000/api/inbox/uuid-here?page=1&limit=10" \
+  -H "X-API-Key: redmail-readonly-key-2024"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "messages": [
+    {
+      "id": "msg-uuid",
+      "from": "sender@example.com",
+      "subject": "Test Email",
+      "receivedAt": "2024-01-01T10:30:00Z",
+      "isRead": false,
+      "hasAttachments": true
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 25,
+    "pages": 3
+  },
+  "unreadCount": 5
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method get">GET</span>
+                                <span class="url">/api/message/:messageId</span>
+                            </div>
+                            <div class="endpoint-description">Get detailed information about a specific message</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X GET "http://localhost:3000/api/message/msg-uuid" \
+  -H "X-API-Key: redmail-readonly-key-2024"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "message": {
+    "id": "msg-uuid",
+    "from": "sender@example.com",
+    "to": "myemail@oplex.online",
+    "subject": "Test Email",
+    "content": "Email content here...",
+    "receivedAt": "2024-01-01T10:30:00Z",
+    "isRead": true,
+    "attachments": [
+      {
+        "filename": "document.pdf",
+        "size": 1024,
+        "downloadUrl": "/api/attachment/att-uuid"
+      }
+    ]
+  }
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method delete">DELETE</span>
+                                <span class="url">/api/message/:messageId</span>
+                            </div>
+                            <div class="endpoint-description">Delete a specific message</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X DELETE "http://localhost:3000/api/message/msg-uuid" \
+  -H "X-API-Key: redmail-api-key-2024-production"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "message": "Message deleted successfully"
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method delete">DELETE</span>
+                                <span class="url">/api/inbox/:emailId/clear</span>
+                            </div>
+                            <div class="endpoint-description">Clear all messages from an email inbox</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X DELETE "http://localhost:3000/api/inbox/uuid-here/clear" \
+  -H "X-API-Key: redmail-api-key-2024-production"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "deletedCount": 15,
+  "message": "All messages cleared successfully"
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Search & Statistics -->
+                    <div class="endpoint-group">
+                        <h4>Search & Statistics</h4>
+                        
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method get">GET</span>
+                                <span class="url">/api/search/messages</span>
+                            </div>
+                            <div class="endpoint-description">Search messages across all emails</div>
+                            <div class="endpoint-params">
+                                <strong>Query Parameters:</strong>
+                                <ul>
+                                    <li><code>q</code> - Search term (required)</li>
+                                    <li><code>page</code> - Page number (default: 1)</li>
+                                    <li><code>limit</code> - Results per page (default: 20)</li>
+                                </ul>
+                            </div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X GET "http://localhost:3000/api/search/messages?q=test&page=1&limit=5" \
+  -H "X-API-Key: redmail-readonly-key-2024"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "results": [
+    {
+      "id": "msg-uuid",
+      "from": "sender@example.com",
+      "subject": "Test Email",
+      "snippet": "This is a test message...",
+      "receivedAt": "2024-01-01T10:30:00Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 5,
+    "total": 12,
+    "pages": 3
+  }
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method get">GET</span>
+                                <span class="url">/api/stats</span>
+                            </div>
+                            <div class="endpoint-description">Get system statistics</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X GET "http://localhost:3000/api/stats" \
+  -H "X-API-Key: redmail-readonly-key-2024"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "stats": {
+    "totalEmails": 1250,
+    "totalMessages": 3420,
+    "activeEmails": 89,
+    "domainsCount": 4,
+    "messagesLast24h": 156
+  }
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Real-time Features -->
+                    <div class="endpoint-group">
+                        <h4>Real-time Features</h4>
+                        
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method post">POST</span>
+                                <span class="url">/api/temp-email/:emailId/subscribe</span>
+                            </div>
+                            <div class="endpoint-description">Subscribe to real-time updates for an email</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X POST "http://localhost:3000/api/temp-email/uuid-here/subscribe" \
+  -H "X-API-Key: redmail-readonly-key-2024"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "message": "Subscribe to Socket.IO for real-time updates",
+  "email": "myemail@oplex.online",
+  "socketEvents": {
+    "subscribe": "email:myemail@oplex.online",
+    "messageEvent": "new_message",
+    "apiEvent": "api:message"
+  }
+}</code></pre>
+                            </div>
+                        </div>
+
+                        <div class="endpoint-detail">
+                            <div class="endpoint-header">
+                                <span class="method get">GET</span>
+                                <span class="url">/api/realtime/status</span>
+                            </div>
+                            <div class="endpoint-description">Get real-time system status</div>
+                            <div class="endpoint-example">
+                                <h5>Request:</h5>
+                                <pre><code>curl -X GET "http://localhost:3000/api/realtime/status" \
+  -H "X-API-Key: redmail-readonly-key-2024"</code></pre>
+                                <h5>Response:</h5>
+                                <pre><code>{
+  "success": true,
+  "realtimeEnabled": true,
+  "autoRefreshInterval": 5,
+  "socketIO": {
+    "enabled": true,
+    "endpoint": "/socket.io/"
+  }
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error Responses -->
+                    <div class="endpoint-group">
+                        <h4>Error Responses</h4>
+                        <div class="error-examples">
+                            <div class="error-example">
+                                <h5>401 Unauthorized (Missing API Key)</h5>
+                                <pre><code>{
+  "error": "API key required",
+  "message": "Please provide an API key in the X-API-Key header or api_key query parameter"
+}</code></pre>
+                            </div>
+                            <div class="error-example">
+                                <h5>401 Unauthorized (Invalid API Key)</h5>
+                                <pre><code>{
+  "error": "Invalid API key",
+  "message": "The provided API key is not valid"
+}</code></pre>
+                            </div>
+                            <div class="error-example">
+                                <h5>403 Forbidden (Insufficient Permissions)</h5>
+                                <pre><code>{
+  "error": "Insufficient permissions",
+  "message": "This API key does not have 'write' permission"
+}</code></pre>
+                            </div>
+                            <div class="error-example">
+                                <h5>429 Too Many Requests</h5>
+                                <pre><code>{
+  "error": "Rate limit exceeded",
+  "message": "Too many requests, please try again later"
+}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 </div>
             </div>
         </section>

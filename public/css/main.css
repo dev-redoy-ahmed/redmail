@@ -150,6 +150,321 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* API Documentation Styles */
+.api-auth {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  backdrop-filter: blur(10px);
+}
+
+.api-auth h3 {
+  color: var(--primary-color);
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.auth-methods {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.auth-method {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.auth-method:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.auth-method h4 {
+  color: var(--white);
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.auth-method code {
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--primary-color);
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  display: block;
+  font-size: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  word-break: break-all;
+}
+
+.api-keys {
+  margin-top: 1.5rem;
+}
+
+.api-keys h4 {
+  color: var(--white);
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.key-item {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 0.75rem;
+  transition: all 0.3s ease;
+}
+
+.key-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.key-item strong {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.key-item code {
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--success-color);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  margin: 0 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.permissions {
+  display: block;
+  color: var(--gray-400);
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  font-style: italic;
+}
+
+.endpoint-group {
+  margin-bottom: 3rem;
+}
+
+.endpoint-group h4 {
+  color: var(--primary-color);
+  font-size: 1.3rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+}
+
+.endpoint-detail {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.endpoint-detail:hover {
+  border-color: var(--primary-color);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.endpoint-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.method {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  min-width: 80px;
+  text-align: center;
+  border: none;
+}
+
+.method.get {
+  background: linear-gradient(135deg, var(--success-color), var(--success-hover));
+  color: var(--white);
+}
+
+.method.post {
+  background: linear-gradient(135deg, var(--primary-color), var(--primary-hover));
+  color: var(--white);
+}
+
+.method.delete {
+  background: linear-gradient(135deg, var(--error-color), var(--error-hover));
+  color: var(--white);
+}
+
+.method.put {
+  background: linear-gradient(135deg, var(--warning-color), var(--warning-hover));
+  color: var(--white);
+}
+
+.endpoint-header .url {
+  font-family: 'Monaco', 'Menlo', monospace;
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--primary-color);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  flex: 1;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  word-break: break-all;
+}
+
+.endpoint-description {
+  color: var(--gray-300);
+  margin-bottom: 1rem;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.endpoint-params {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1rem;
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.endpoint-params h5 {
+  color: var(--white);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.endpoint-params ul {
+  margin: 0.5rem 0 0 1rem;
+  color: var(--gray-300);
+}
+
+.endpoint-params li {
+  margin-bottom: 0.25rem;
+}
+
+.endpoint-params code {
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--warning-color);
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.endpoint-example {
+  margin-top: 1rem;
+}
+
+.endpoint-example h5 {
+  color: var(--white);
+  margin: 1rem 0 0.5rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.endpoint-example pre {
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--gray-300);
+  padding: 1rem;
+  border-radius: 12px;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin: 0;
+}
+
+.endpoint-example code {
+  background: none;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  border: none;
+}
+
+.error-examples {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.error-example {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.error-example h5 {
+  color: var(--error-color);
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.error-example pre {
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--gray-300);
+  padding: 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 0.9rem;
+  margin: 0;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* Responsive Design for API Documentation */
+@media (max-width: 768px) {
+  .auth-methods {
+    grid-template-columns: 1fr;
+  }
+  
+  .endpoint-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  
+  .endpoint-header .url {
+    width: 100%;
+    word-break: break-all;
+  }
+  
+  .method {
+    align-self: flex-start;
+  }
+  
+  .api-auth {
+    padding: 1.5rem;
+  }
+  
+  .endpoint-detail {
+    padding: 1rem;
+  }
+}
+
 .custom-email-form h3 {
   margin-bottom: 1.5rem;
   color: var(--white);
