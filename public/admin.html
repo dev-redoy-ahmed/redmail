@@ -452,22 +452,81 @@
                 
                 <!-- Test Inbox Content -->
                 <div id="test-inbox-content" class="page-content">
+                    <!-- Error Log Section -->
+                    <div class="card mb-3" id="errorLogCard" style="display: none;">
+                        <div class="card-header bg-danger">
+                            <h4 class="card-title text-white">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Error Log
+                            </h4>
+                            <button class="btn btn-sm btn-light" id="clearErrorLog">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="errorLogContainer" class="error-log-container"></div>
+                        </div>
+                    </div>
+
+                    <!-- Custom Email Creation -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h4 class="card-title">
+                                <i class="fas fa-envelope-open-text"></i>
+                                Custom Email Creation
+                            </h4>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="form-label">Custom Email Prefix</label>
+                                        <input type="text" class="form-input" id="customEmailPrefix" placeholder="myemail">
+                                        <small class="form-help">Enter custom prefix for your email address</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="form-label">Domain</label>
+                                        <select class="form-input" id="customEmailDomain">
+                                            <option value="oplex.online">oplex.online</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <button class="btn btn-success" id="createCustomEmail">
+                                    <i class="fas fa-plus-circle"></i>
+                                    Create Custom Email
+                                </button>
+                                <button class="btn btn-primary" id="generateRandomEmail">
+                                    <i class="fas fa-random"></i>
+                                    Generate Random Email
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Test Inbox -->
                     <div class="card">
                         <div class="card-header">
-                            <h3 class="card-title">Test Inbox - Temporary Email Testing</h3>
+                            <h3 class="card-title">
+                                <i class="fas fa-inbox"></i>
+                                Test Inbox - Enhanced Email Testing
+                            </h3>
                             <div class="card-actions">
                                 <!-- Real-time Connection Status -->
                                 <div class="connection-status" id="connectionStatus">
                                     <span class="status-indicator offline" id="statusIndicator"></span>
                                     <span class="status-text" id="statusText">Connecting...</span>
                                 </div>
-                                <button class="btn btn-primary" id="generateNewTestEmail">
-                                    <i class="fas fa-plus"></i>
-                                    Generate New Email
-                                </button>
-                                <button class="btn btn-success" id="refreshTestInbox" style="display: none;">
+                                <button class="btn btn-warning" id="refreshTestInbox">
                                     <i class="fas fa-sync-alt"></i>
-                                    Refresh (Not Needed)
+                                    Force Refresh
+                                </button>
+                                <button class="btn btn-danger" id="deleteAllMessages">
+                                    <i class="fas fa-trash-alt"></i>
+                                    Delete All
                                 </button>
                             </div>
                         </div>
@@ -476,17 +535,34 @@
                             <div id="currentTestEmail" class="current-email-display">
                                 <div class="alert alert-info">
                                     <i class="fas fa-info-circle"></i>
-                                    Click "Generate New Email" to create a test temporary email address.
+                                    Create a custom email or generate a random one to start testing.
                                 </div>
                             </div>
                             
                             <!-- Test Email Messages -->
                             <div id="testEmailMessages" class="test-messages-section" style="display: none;">
-                                <h4>Received Messages</h4>
+                                <div class="messages-header">
+                                    <h4>
+                                        <i class="fas fa-envelope"></i>
+                                        Received Messages
+                                        <span class="badge badge-primary" id="messageCount">0</span>
+                                    </h4>
+                                    <div class="messages-actions">
+                                        <button class="btn btn-sm btn-info" id="markAllRead">
+                                            <i class="fas fa-check-double"></i>
+                                            Mark All Read
+                                        </button>
+                                        <button class="btn btn-sm btn-warning" id="exportMessages">
+                                            <i class="fas fa-download"></i>
+                                            Export
+                                        </button>
+                                    </div>
+                                </div>
                                 <div class="messages-container" id="messagesContainer">
                                     <div class="no-messages">
                                         <i class="fas fa-inbox"></i>
                                         <p>No messages received yet</p>
+                                        <small>Send an email to see it here in real-time</small>
                                     </div>
                                 </div>
                             </div>

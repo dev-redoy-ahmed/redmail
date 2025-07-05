@@ -870,6 +870,8 @@ class AdminPanel {
         this.bindTestInboxEvents();
         this.loadTestHistory();
         this.loadTestConfig();
+        this.loadAvailableDomains();
+        this.initializeErrorLogging();
         
         // Start auto-refresh if enabled
         const autoRefresh = localStorage.getItem('testAutoRefresh');
@@ -879,19 +881,59 @@ class AdminPanel {
     }
 
     bindTestInboxEvents() {
-        // Generate new test email
-        const generateBtn = document.getElementById('generateNewTestEmail');
-        if (generateBtn) {
-            generateBtn.addEventListener('click', () => {
-                this.generateTestEmail();
+        // Custom email creation
+        const createCustomBtn = document.getElementById('createCustomEmail');
+        if (createCustomBtn) {
+            createCustomBtn.addEventListener('click', () => {
+                this.createCustomEmail();
             });
         }
 
-        // Refresh test inbox
+        // Generate random email
+        const generateRandomBtn = document.getElementById('generateRandomEmail');
+        if (generateRandomBtn) {
+            generateRandomBtn.addEventListener('click', () => {
+                this.generateRandomEmail();
+            });
+        }
+
+        // Refresh test inbox (force refresh)
         const refreshBtn = document.getElementById('refreshTestInbox');
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => {
-                this.refreshTestInboxMessages();
+                this.forceRefreshMessages();
+            });
+        }
+
+        // Delete all messages
+        const deleteAllBtn = document.getElementById('deleteAllMessages');
+        if (deleteAllBtn) {
+            deleteAllBtn.addEventListener('click', () => {
+                this.deleteAllMessages();
+            });
+        }
+
+        // Mark all as read
+        const markAllReadBtn = document.getElementById('markAllRead');
+        if (markAllReadBtn) {
+            markAllReadBtn.addEventListener('click', () => {
+                this.markAllMessagesRead();
+            });
+        }
+
+        // Export messages
+        const exportBtn = document.getElementById('exportMessages');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                this.exportMessages();
+            });
+        }
+
+        // Clear error log
+        const clearErrorBtn = document.getElementById('clearErrorLog');
+        if (clearErrorBtn) {
+            clearErrorBtn.addEventListener('click', () => {
+                this.clearErrorLog();
             });
         }
 
@@ -1046,6 +1088,7 @@ class AdminPanel {
 
     displayTestMessages(messages) {
         const container = document.getElementById('messagesContainer');
+        const testEmailSection = document.getElementById('testEmailMessages');
         
         if (!messages || messages.length === 0) {
             container.innerHTML = `
@@ -1055,26 +1098,43 @@ class AdminPanel {
                     <small>Send an email to ${this.currentTestEmail?.email || 'your test email'} to see it here</small>
                 </div>
             `;
+            testEmailSection.style.display = 'block';
+            this.updateMessageCount();
             return;
         }
         
-        container.innerHTML = messages.map(message => `
-            <div class="message-card">
+        testEmailSection.style.display = 'block';
+        
+        container.innerHTML = messages.map((message, index) => `
+            <div class="message-card ${message.read ? '' : 'unread'}" data-message-id="${message.id || index}">
                 <div class="message-header">
-                    <div class="message-from">
-                        <i class="fas fa-user"></i>
-                        <strong>From:</strong> ${message.from || 'Unknown'}
+                    <div class="message-info">
+                        <div class="message-from">
+                            <i class="fas fa-user"></i>
+                            <strong>From:</strong> ${message.from || 'Unknown'}
+                        </div>
+                        <div class="message-subject">
+                            <i class="fas fa-envelope"></i>
+                            <strong>Subject:</strong> ${message.subject || 'No Subject'}
+                        </div>
+                        <div class="message-time">
+                            <i class="fas fa-clock"></i>
+                            ${new Date(message.receivedAt || message.date).toLocaleString()}
+                        </div>
                     </div>
-                    <div class="message-date">
-                        <i class="fas fa-clock"></i>
-                        ${new Date(message.receivedAt).toLocaleString()}
+                    <div class="message-actions">
+                        <button class="btn btn-sm btn-info" onclick="adminPanel.viewFullMessage('${message.id || index}')">
+                            <i class="fas fa-eye"></i> View Full
+                        </button>
+                        <button class="btn btn-sm btn-warning" onclick="adminPanel.markMessageRead('${message.id || index}')">
+                            <i class="fas fa-check"></i> ${message.read ? 'Read' : 'Mark Read'}
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="adminPanel.deleteMessage('${message.id || index}')">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
                     </div>
                 </div>
-                <div class="message-subject">
-                    <i class="fas fa-envelope"></i>
-                    <strong>Subject:</strong> ${message.subject || 'No Subject'}
-                </div>
-                <div class="message-content">
+                <div class="message-preview">
                     <div class="message-text">
                         ${message.text || message.html || 'No content'}
                     </div>
@@ -1778,7 +1838,336 @@ class AdminPanel {
             this.showNotification('error', error.message || 'Failed to delete domain');
         }
     }
-}
+
+    // Enhanced Test Inbox Methods
+    async loadAvailableDomains() {
+        try {
+            const data = await this.apiCall('/api/admin/domains');
+            const domainSelect = document.getElementById('customEmailDomain');
+            if (domainSelect && data.domains) {
+                domainSelect.innerHTML = '';
+                data.domains.forEach(domain => {
+                    const option = document.createElement('option');
+                    option.value = domain;
+                    option.textContent = domain;
+                    domainSelect.appendChild(option);
+                });
+            }
+        } catch (error) {
+            this.logError(`Failed to load domains: ${error.message}`);
+        }
+    }
+
+    initializeErrorLogging() {
+        this.errorLog = [];
+        this.maxErrorLogSize = 50;
+    }
+
+    logError(message, details = null) {
+        const errorItem = {
+            timestamp: new Date(),
+            message: message,
+            details: details
+        };
+        
+        this.errorLog.unshift(errorItem);
+        if (this.errorLog.length > this.maxErrorLogSize) {
+            this.errorLog = this.errorLog.slice(0, this.maxErrorLogSize);
+        }
+        
+        this.updateErrorLogDisplay();
+        console.error('Test Inbox Error:', message, details);
+    }
+
+    updateErrorLogDisplay() {
+        const errorLogCard = document.getElementById('errorLogCard');
+        const errorLogContainer = document.getElementById('errorLogContainer');
+        
+        if (!errorLogContainer) return;
+        
+        if (this.errorLog.length > 0) {
+            errorLogCard.style.display = 'block';
+            errorLogContainer.innerHTML = this.errorLog.map(error => `
+                <div class="error-item">
+                    <div class="error-time">${error.timestamp.toLocaleString()}</div>
+                    <div class="error-message">${error.message}</div>
+                    ${error.details ? `<div class="error-details">${JSON.stringify(error.details)}</div>` : ''}
+                </div>
+            `).join('');
+        } else {
+            errorLogCard.style.display = 'none';
+        }
+    }
+
+    clearErrorLog() {
+        this.errorLog = [];
+        this.updateErrorLogDisplay();
+    }
+
+    async createCustomEmail() {
+        const prefix = document.getElementById('customEmailPrefix').value.trim();
+        const domain = document.getElementById('customEmailDomain').value;
+        
+        if (!prefix) {
+            this.logError('Please enter a custom email prefix');
+            return;
+        }
+        
+        if (!/^[a-zA-Z0-9._-]+$/.test(prefix)) {
+            this.logError('Email prefix can only contain letters, numbers, dots, hyphens, and underscores');
+            return;
+        }
+        
+        const customEmail = `${prefix}@${domain}`;
+        await this.setTestEmail(customEmail);
+    }
+
+    async generateRandomEmail() {
+        const domain = document.getElementById('customEmailDomain').value;
+        const randomPrefix = this.generateRandomString(8);
+        const randomEmail = `${randomPrefix}@${domain}`;
+        await this.setTestEmail(randomEmail);
+    }
+
+    generateRandomString(length) {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        let result = '';
+        for (let i = 0; i < length; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+    }
+
+    async setTestEmail(email) {
+        try {
+            // Create test email via API
+            const response = await this.apiCall('/api/temp-email', 'POST', {
+                email: email,
+                customPrefix: true
+            });
+            
+            this.currentTestEmail = response;
+            localStorage.setItem('currentTestEmail', JSON.stringify(response));
+            
+            this.displayCurrentTestEmail();
+            this.startMessagePolling();
+            
+            // Clear custom email input
+            const prefixInput = document.getElementById('customEmailPrefix');
+            if (prefixInput) prefixInput.value = '';
+            
+            this.showNotification('success', `Test email created: ${email}`);
+            
+        } catch (error) {
+            this.logError(`Failed to create test email: ${error.message}`);
+        }
+    }
+
+    async forceRefreshMessages() {
+        if (!this.currentTestEmail) {
+            this.logError('No test email available for refresh');
+            return;
+        }
+        
+        const refreshBtn = document.getElementById('refreshTestInbox');
+        if (refreshBtn) {
+            refreshBtn.innerHTML = '<div class="loading-spinner"></div> Refreshing...';
+            refreshBtn.disabled = true;
+        }
+        
+        try {
+            const messages = await this.apiCall(`/api/temp-email/${this.currentTestEmail.id}/messages?t=${Date.now()}`);
+            this.displayTestMessages(messages);
+            this.showNotification('success', 'Messages refreshed successfully');
+            
+        } catch (error) {
+            this.logError(`Force refresh failed: ${error.message}`);
+        } finally {
+            if (refreshBtn) {
+                refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Force Refresh';
+                refreshBtn.disabled = false;
+            }
+        }
+    }
+
+    async deleteAllMessages() {
+        if (!this.currentTestEmail) {
+            this.logError('No test email available');
+            return;
+        }
+        
+        if (!confirm('Are you sure you want to delete all messages? This action cannot be undone.')) {
+            return;
+        }
+        
+        try {
+            await this.apiCall(`/api/temp-email/${this.currentTestEmail.id}/messages`, 'DELETE');
+            this.displayTestMessages([]);
+            this.showNotification('success', 'All messages deleted successfully');
+            
+        } catch (error) {
+            this.logError(`Failed to delete messages: ${error.message}`);
+        }
+    }
+
+    markAllMessagesRead() {
+        const messageCards = document.querySelectorAll('.message-card.unread');
+        messageCards.forEach(card => {
+            card.classList.remove('unread');
+        });
+        
+        this.updateMessageCount();
+        this.showNotification('success', 'All messages marked as read');
+    }
+
+    updateMessageCount() {
+        const messageCount = document.getElementById('messageCount');
+        const unreadCount = document.querySelectorAll('.message-card.unread').length;
+        if (messageCount) {
+            messageCount.textContent = unreadCount;
+        }
+    }
+
+    exportMessages() {
+        if (!this.currentTestEmail) {
+            this.logError('No test email available for export');
+            return;
+        }
+        
+        const messages = this.getCurrentMessages();
+        if (messages.length === 0) {
+            this.logError('No messages to export');
+            return;
+        }
+        
+        const exportData = {
+            email: this.currentTestEmail.email,
+            exportDate: new Date().toISOString(),
+            messages: messages
+        };
+        
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `test-inbox-${this.currentTestEmail.email}-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        this.showNotification('success', 'Messages exported successfully');
+    }
+
+    getCurrentMessages() {
+        const messageCards = document.querySelectorAll('.message-card');
+        const messages = [];
+        
+        messageCards.forEach(card => {
+            const from = card.querySelector('.message-from')?.textContent || '';
+            const subject = card.querySelector('.message-subject')?.textContent || '';
+            const time = card.querySelector('.message-date')?.textContent || '';
+            const content = card.querySelector('.message-text')?.textContent || '';
+            
+            messages.push({ from, subject, time, content });
+        });
+        
+        return messages;
+     }
+
+     // Message Action Methods
+     async viewFullMessage(messageId) {
+         try {
+             const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
+             if (!messageCard) return;
+             
+             const from = messageCard.querySelector('.message-from').textContent;
+             const subject = messageCard.querySelector('.message-subject').textContent;
+             const time = messageCard.querySelector('.message-time').textContent;
+             const content = messageCard.querySelector('.message-text').textContent;
+             
+             // Create modal for full message view
+             const modal = document.createElement('div');
+             modal.className = 'modal-overlay';
+             modal.innerHTML = `
+                 <div class="modal-content">
+                     <div class="modal-header">
+                         <h3>Full Message View</h3>
+                         <button class="btn btn-sm btn-secondary" onclick="this.closest('.modal-overlay').remove()">
+                             <i class="fas fa-times"></i>
+                         </button>
+                     </div>
+                     <div class="modal-body">
+                         <div class="message-details">
+                             <p><strong>From:</strong> ${from}</p>
+                             <p><strong>Subject:</strong> ${subject}</p>
+                             <p><strong>Time:</strong> ${time}</p>
+                         </div>
+                         <div class="message-full-content">
+                             <h4>Content:</h4>
+                             <div class="content-box">${content}</div>
+                         </div>
+                     </div>
+                 </div>
+             `;
+             
+             document.body.appendChild(modal);
+             
+         } catch (error) {
+             this.logError(`Failed to view full message: ${error.message}`);
+         }
+     }
+
+     async markMessageRead(messageId) {
+         try {
+             const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
+             if (!messageCard) return;
+             
+             messageCard.classList.remove('unread');
+             const markButton = messageCard.querySelector('.btn-warning');
+             if (markButton) {
+                 markButton.innerHTML = '<i class="fas fa-check"></i> Read';
+             }
+             
+             this.updateMessageCount();
+             
+         } catch (error) {
+             this.logError(`Failed to mark message as read: ${error.message}`);
+         }
+     }
+
+     async deleteMessage(messageId) {
+         try {
+             if (!confirm('Are you sure you want to delete this message?')) {
+                 return;
+             }
+             
+             const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
+             if (!messageCard) return;
+             
+             // Add fade out animation
+             messageCard.style.transition = 'all 0.3s ease';
+             messageCard.style.opacity = '0';
+             messageCard.style.transform = 'translateX(-100%)';
+             
+             setTimeout(() => {
+                 messageCard.remove();
+                 this.updateMessageCount();
+                 
+                 // Check if no messages left
+                 const remainingMessages = document.querySelectorAll('.message-card');
+                 if (remainingMessages.length === 0) {
+                     this.displayTestMessages([]);
+                 }
+             }, 300);
+             
+             this.showNotification('success', 'Message deleted successfully');
+             
+         } catch (error) {
+             this.logError(`Failed to delete message: ${error.message}`);
+         }
+     }
+ }
 
 // Add CSS for page content visibility
 const style = document.createElement('style');

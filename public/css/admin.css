@@ -494,6 +494,205 @@ body {
   to { transform: rotate(360deg); }
 }
 
+/* Modal Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+    background: var(--black);
+    border-radius: 8px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.3s ease;
+    border: 1px solid var(--gray-800);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--gray-800);
+    background: var(--primary-color);
+    color: white;
+    border-radius: 8px 8px 0 0;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: white;
+}
+
+.modal-body {
+    padding: 20px;
+    background: var(--black);
+}
+
+.message-details {
+    background: var(--gray-900);
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 20px;
+    border-left: 4px solid var(--primary-color);
+}
+
+.message-details p {
+    margin: 8px 0;
+    color: var(--white);
+}
+
+.message-full-content h4 {
+    color: var(--white);
+    margin-bottom: 10px;
+}
+
+.content-box {
+    background: var(--gray-900);
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid var(--gray-800);
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--white);
+    white-space: pre-wrap;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Enhanced Message Card Styles */
+.message-card {
+    border-bottom: 1px solid var(--gray-800);
+    padding: 15px;
+    transition: all 0.2s;
+    position: relative;
+    background: var(--black);
+}
+
+.message-card:last-child {
+    border-bottom: none;
+}
+
+.message-card:hover {
+    background: var(--gray-900);
+    transform: translateX(2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.message-card.unread {
+    border-left: 4px solid var(--primary-color);
+    background: rgba(37, 99, 235, 0.05);
+}
+
+.message-card.unread::before {
+    content: 'NEW';
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: var(--primary-color);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.message-info {
+    flex: 1;
+}
+
+.message-from, .message-subject, .message-time {
+    margin-bottom: 4px;
+    font-size: 14px;
+}
+
+.message-from {
+    font-weight: bold;
+    color: var(--white);
+}
+
+.message-subject {
+    color: var(--gray-300);
+    font-weight: 500;
+}
+
+.message-time {
+    font-size: 12px;
+    color: var(--gray-400);
+}
+
+.message-actions {
+    display: flex;
+    gap: 6px;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+}
+
+.message-card:hover .message-actions {
+    opacity: 1;
+}
+
+.message-preview {
+    margin-top: 10px;
+}
+
+.message-text {
+    font-size: 13px;
+    color: var(--gray-300);
+    line-height: 1.4;
+    max-height: 60px;
+    overflow: hidden;
+    position: relative;
+}
+
+.message-text::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 30px;
+    height: 20px;
+    background: linear-gradient(to right, transparent, var(--black));
+}
+
 /* Alerts */
 .alert {
   padding: var(--spacing-md);
@@ -761,6 +960,74 @@ body {
 .test-inbox-actions {
     display: flex;
     gap: var(--spacing-sm);
+}
+
+/* Error Log Styles */
+.error-log-container {
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--gray-900);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    border: 1px solid var(--gray-800);
+}
+
+.error-item {
+    background: var(--black);
+    border-left: 4px solid var(--error-color);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-sm);
+}
+
+.error-time {
+    font-size: 0.75rem;
+    color: var(--gray-400);
+    margin-bottom: var(--spacing-xs);
+}
+
+.error-message {
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    color: var(--error-color);
+    margin: 0;
+}
+
+/* Custom Email Creation Styles */
+.form-group {
+    margin-bottom: var(--spacing-lg);
+}
+
+.form-label {
+    display: block;
+    margin-bottom: var(--spacing-sm);
+    font-weight: 500;
+    color: var(--white);
+}
+
+.form-input {
+    width: 100%;
+    padding: var(--spacing-md);
+    border: 1px solid var(--gray-700);
+    border-radius: var(--radius-md);
+    background-color: var(--black);
+    color: var(--white);
+    font-size: 0.875rem;
+    transition: all var(--transition-fast);
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-help {
+    display: block;
+    margin-top: var(--spacing-xs);
+    font-size: 0.75rem;
+    color: var(--gray-400);
 }
 
 /* Current Email Card */

@@ -2800,6 +2800,175 @@ const initializeDefaultDomains = async () => {
   }
 };
 
+// Enhanced API Endpoints for Test Inbox
+
+// Delete all messages for an email
+app.delete('/api/temp-email/:emailId/messages', apiLimiter, async (req, res) => {
+  try {
+    const { emailId } = req.params;
+    
+    let messagesDeleted = false;
+    
+    if (redisConnected && client) {
+      // Redis implementation
+      const emailData = await client.hGet(REDIS_KEYS.EMAILS, emailId);
+      if (emailData) {
+        await client.del(REDIS_KEYS.MESSAGES + emailId);
+        messagesDeleted = true;
+        
+        // Update email message count
+        const email = JSON.parse(emailData);
+        email.messageCount = 0;
+        await client.hSet(REDIS_KEYS.EMAILS, emailId, JSON.stringify(email));
+      }
+    } else {
+      // Memory implementation
+      if (memoryStore.emails.has(emailId)) {
+        memoryStore.messages.set(emailId, []);
+        messagesDeleted = true;
+        
+        // Update email message count
+        const email = memoryStore.emails.get(emailId);
+        email.messageCount = 0;
+        memoryStore.emails.set(emailId, email);
+      }
+    }
+    
+    if (!messagesDeleted) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+    
+    // Log the deletion
+    const log = {
+      id: uuidv4(),
+      action: 'MESSAGES_CLEARED',
+      emailId: emailId,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    // Emit real-time update
+    io.to(`email_id:${emailId}`).emit('messagesCleared');
+    io.emit('newLog', log);
+    
+    res.json({
+      success: true,
+      message: 'All messages deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete messages error:', error);
+    res.status(500).json({ error: 'Failed to delete messages' });
+  }
+});
+
+// Create custom email with specific prefix
+app.post('/api/temp-email', apiLimiter, [
+  body('email').isEmail().withMessage('Invalid email format'),
+  body('customPrefix').optional().isBoolean()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    const { email, customPrefix } = req.body;
+    const [localPart, domain] = email.split('@');
+    
+    // Validate domain is active
+    const activeDomains = await getActiveDomains();
+    if (!activeDomains.includes(domain)) {
+      return res.status(400).json({ error: 'Domain not available' });
+    }
+    
+    const emailId = uuidv4();
+    const tempEmail = {
+      id: emailId,
+      email: email,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + CONFIG.EMAIL_EXPIRY_TIME * 60 * 1000),
+      messageCount: 0,
+      domain: domain,
+      type: customPrefix ? 'custom' : 'random'
+    };
+
+    await saveEmailToRedis(tempEmail);
+    await incrementDomainEmailCount(domain);
+
+    // Log the generation
+    const log = {
+      id: uuidv4(),
+      action: 'CUSTOM_EMAIL_CREATED',
+      email: tempEmail.email,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+
+    // Emit real-time update
+    io.emit('emailGenerated', tempEmail);
+    io.emit('newLog', log);
+    io.to(`email_id:${tempEmail.id}`).emit('emailCreated', tempEmail);
+
+    res.json({
+      success: true,
+      email: tempEmail.email,
+      id: tempEmail.id,
+      expiresAt: tempEmail.expiresAt,
+      domain: domain
+    });
+  } catch (error) {
+    console.error('Custom email creation error:', error);
+    res.status(500).json({ error: 'Failed to create custom email' });
+  }
+});
+
+// Get email statistics
+app.get('/api/temp-email/:emailId/stats', apiLimiter, async (req, res) => {
+  try {
+    const { emailId } = req.params;
+    
+    let email = null;
+    let messages = [];
+    
+    if (redisConnected && client) {
+      const emailData = await client.hGet(REDIS_KEYS.EMAILS, emailId);
+      if (emailData) {
+        email = JSON.parse(emailData);
+        const messagesData = await client.lRange(REDIS_KEYS.MESSAGES + emailId, 0, -1);
+        messages = messagesData.map(msg => JSON.parse(msg));
+      }
+    } else {
+      email = memoryStore.emails.get(emailId);
+      messages = memoryStore.messages.get(emailId) || [];
+    }
+    
+    if (!email) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+    
+    const stats = {
+      email: email.email,
+      createdAt: email.createdAt,
+      expiresAt: email.expiresAt,
+      messageCount: messages.length,
+      unreadCount: messages.filter(msg => !msg.read).length,
+      lastMessageAt: messages.length > 0 ? messages[0].receivedAt : null,
+      domain: email.domain,
+      type: email.type
+    };
+    
+    res.json({
+      success: true,
+      stats: stats
+    });
+  } catch (error) {
+    console.error('Get email stats error:', error);
+    res.status(500).json({ error: 'Failed to retrieve email statistics' });
+  }
+});
+
 // Initialize the application
 const initializeApp = async () => {
   await initializeDefaultDomains();
@@ -2815,6 +2984,7 @@ const initializeApp = async () => {
     console.log(`⚙️  Email Expiry: ${CONFIG.EMAIL_EXPIRY_TIME} minutes`);
     console.log(`📦 Message Retention: ${CONFIG.MESSAGE_RETENTION_TIME} hours`);
     console.log(`🔄 Real-time Push: ${CONFIG.REALTIME_API_PUSH ? 'Enabled' : 'Disabled'}`);
+    console.log(`✨ Enhanced Test Inbox: Enabled`);
     
     if (CONFIG.NODE_ENV === 'development') {
       console.log('⚠️  SMTP server disabled for local development');
