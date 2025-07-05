@@ -1743,7 +1743,7 @@ class AdminPanel {
 
         try {
             await this.apiCall('/api/admin/domains', 'POST', {
-                name: domainName,
+                domain: domainName,
                 status: domainStatus
             });
 
@@ -1757,7 +1757,7 @@ class AdminPanel {
 
     async toggleDomainStatus(domainName) {
         try {
-            await this.apiCall(`/api/admin/domains/${domainName}/toggle`, 'PUT');
+            await this.apiCall(`/api/admin/domains/${domainName}/toggle`, 'PATCH');
             this.showNotification('success', 'Domain status updated successfully!');
             this.loadDomains();
         } catch (error) {
