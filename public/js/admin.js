@@ -1783,35 +1783,191 @@ class AdminPanel {
         document.getElementById('addDomainForm').style.display = 'none';
         document.getElementById('newDomainName').value = '';
         document.getElementById('newDomainStatus').value = 'active';
+        this.clearDomainErrors();
+    }
+    
+    showDomainError(message, code, details = null) {
+        // Create or update error display
+        let errorDiv = document.getElementById('domainErrorDisplay');
+        if (!errorDiv) {
+            errorDiv = document.createElement('div');
+            errorDiv.id = 'domainErrorDisplay';
+            errorDiv.className = 'error-display';
+            
+            // Insert after the domain form
+            const domainForm = document.getElementById('addDomainForm');
+            domainForm.parentNode.insertBefore(errorDiv, domainForm.nextSibling);
+        }
+        
+        let errorContent = `
+            <div class="error-header">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Error: ${message}</strong>
+                <button class="close-error" onclick="adminPanel.clearDomainErrors()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `;
+        
+        if (details) {
+            errorContent += `
+                <div class="error-details">
+                    <strong>Details:</strong> ${details}
+                </div>
+            `;
+        }
+        
+        if (code) {
+            errorContent += `
+                <div class="error-code">
+                    <strong>Error Code:</strong> ${code}
+                </div>
+            `;
+        }
+        
+        // Add troubleshooting tips based on error code
+        const troubleshootingTips = this.getDomainTroubleshootingTips(code);
+        if (troubleshootingTips) {
+            errorContent += `
+                <div class="error-tips">
+                    <strong>Troubleshooting:</strong>
+                    <ul>
+                        ${troubleshootingTips.map(tip => `<li>${tip}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+        
+        errorDiv.innerHTML = errorContent;
+        errorDiv.style.display = 'block';
+        
+        // Auto-hide after 10 seconds for non-critical errors
+        if (code !== 'SERVER_ERROR') {
+            setTimeout(() => {
+                this.clearDomainErrors();
+            }, 10000);
+        }
+    }
+    
+    clearDomainErrors() {
+        const errorDiv = document.getElementById('domainErrorDisplay');
+        if (errorDiv) {
+            errorDiv.style.display = 'none';
+            errorDiv.innerHTML = '';
+        }
+    }
+    
+    getDomainTroubleshootingTips(errorCode) {
+        const tips = {
+            'DOMAIN_REQUIRED': [
+                'Enter a valid domain name in the input field',
+                'Domain name cannot be empty or contain only spaces'
+            ],
+            'INVALID_FORMAT': [
+                'Use proper domain format: example.com',
+                'Domain must contain at least one dot (.)',
+                'Use only letters, numbers, and hyphens',
+                'Domain cannot start or end with a hyphen'
+            ],
+            'RESERVED_DOMAIN': [
+                'Choose a different domain name',
+                'Reserved domains cannot be used for temporary emails',
+                'Try using your own custom domain'
+            ],
+            'DUPLICATE_DOMAIN': [
+                'This domain is already registered',
+                'Check the domains list below to see existing domains',
+                'Use a different domain name'
+            ],
+            'DOMAIN_TOO_LONG': [
+                'Domain name must be 253 characters or less',
+                'Consider using a shorter domain name',
+                'Remove unnecessary subdomains'
+            ],
+            'SERVER_ERROR': [
+                'Check your internet connection',
+                'Try again in a few moments',
+                'Contact administrator if problem persists',
+                'Check the error logs for more details'
+            ]
+        };
+        
+        return tips[errorCode] || null;
     }
 
     async saveDomain() {
         const domainName = document.getElementById('newDomainName').value.trim();
         const domainStatus = document.getElementById('newDomainStatus').value;
+        const saveBtn = document.getElementById('saveDomainBtn');
+        
+        // Clear previous error displays
+        this.clearDomainErrors();
 
         if (!domainName) {
-            this.showNotification('error', 'Please enter a domain name');
+            this.showDomainError('Please enter a domain name', 'VALIDATION_ERROR');
             return;
         }
 
         // Validate domain format
         const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/;
         if (!domainRegex.test(domainName)) {
-            this.showNotification('error', 'Please enter a valid domain name');
+            this.showDomainError('Please enter a valid domain name (e.g., example.com)', 'VALIDATION_ERROR');
             return;
         }
 
+        // Show loading state
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="loading"></span> Adding Domain...';
+
         try {
-            await this.apiCall('/api/admin/domains', 'POST', {
+            const response = await this.apiCall('/api/admin/domains', 'POST', {
                 domain: domainName,
                 status: domainStatus
             });
 
-            this.showNotification('success', 'Domain added successfully!');
+            this.showNotification('success', response.message || 'Domain added successfully!');
             this.hideAddDomainForm();
             this.loadDomains();
+            
+            // Log success
+            this.logError(`Domain added successfully: ${domainName}`, {
+                domain: domainName,
+                status: domainStatus,
+                action: 'ADD_DOMAIN_SUCCESS'
+            });
+            
         } catch (error) {
-            this.showNotification('error', error.message || 'Failed to add domain');
+            console.error('Domain addition error:', error);
+            
+            // Extract detailed error information
+            let errorMessage = 'Failed to add domain';
+            let errorDetails = null;
+            let errorCode = 'UNKNOWN_ERROR';
+            
+            if (error.response && error.response.data) {
+                const errorData = error.response.data;
+                errorMessage = errorData.error || errorMessage;
+                errorDetails = errorData.details;
+                errorCode = errorData.code || errorCode;
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+            
+            // Show detailed error
+            this.showDomainError(errorMessage, errorCode, errorDetails);
+            
+            // Log detailed error
+            this.logError(`Domain addition failed: ${errorMessage}`, {
+                domain: domainName,
+                errorCode: errorCode,
+                errorDetails: errorDetails,
+                action: 'ADD_DOMAIN_ERROR'
+            });
+            
+        } finally {
+            // Reset button state
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="fas fa-save"></i> Save Domain';
         }
     }
 
@@ -1842,7 +1998,8 @@ class AdminPanel {
     // Enhanced Test Inbox Methods
     async loadAvailableDomains() {
         try {
-            const data = await this.apiCall('/api/admin/domains');
+            const response = await fetch('/api/domains/available');
+            const data = await response.json();
             const domainSelect = document.getElementById('customEmailDomain');
             if (domainSelect && data.domains) {
                 domainSelect.innerHTML = '';
@@ -1941,7 +2098,7 @@ class AdminPanel {
     async setTestEmail(email) {
         try {
             // Create test email via API
-            const response = await this.apiCall('/api/temp-email', 'POST', {
+            const response = await this.apiCall('/api/temp-email/create', 'POST', {
                 email: email,
                 customPrefix: true
             });

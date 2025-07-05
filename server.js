@@ -1974,27 +1974,61 @@ app.get('/api/admin/domains', authenticateToken, async (req, res) => {
 // Add new domain
 app.post('/api/admin/domains', authenticateToken, async (req, res) => {
   try {
-    const { domain } = req.body;
+    const { domain, status } = req.body;
     
     if (!domain || typeof domain !== 'string') {
-      return res.status(400).json({ error: 'Domain is required' });
+      return res.status(400).json({ 
+        error: 'Domain is required',
+        details: 'Please provide a valid domain name',
+        code: 'DOMAIN_REQUIRED'
+      });
     }
     
+    // Clean domain name
+    const cleanDomain = domain.toLowerCase().trim();
+    
     // Validate domain format
-    const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$/;
-    if (!domainRegex.test(domain)) {
-      return res.status(400).json({ error: 'Invalid domain format' });
+    const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/;
+    if (!domainRegex.test(cleanDomain)) {
+      return res.status(400).json({ 
+        error: 'Invalid domain format',
+        details: `Domain '${cleanDomain}' is not in valid format. Example: example.com`,
+        code: 'INVALID_FORMAT'
+      });
+    }
+    
+    // Check for reserved domains
+    const reservedDomains = ['localhost', 'example.com', 'test.com', 'gmail.com', 'yahoo.com', 'hotmail.com'];
+    if (reservedDomains.includes(cleanDomain)) {
+      return res.status(400).json({ 
+        error: 'Reserved domain',
+        details: `Domain '${cleanDomain}' is reserved and cannot be used`,
+        code: 'RESERVED_DOMAIN'
+      });
     }
     
     // Check if domain already exists
-    const existingDomain = await getDomainFromRedis(domain);
+    const existingDomain = await getDomainFromRedis(cleanDomain);
     if (existingDomain) {
-      return res.status(400).json({ error: 'Domain already exists' });
+      return res.status(400).json({ 
+        error: 'Domain already exists',
+        details: `Domain '${cleanDomain}' is already registered in the system`,
+        code: 'DUPLICATE_DOMAIN'
+      });
+    }
+    
+    // Validate domain length
+    if (cleanDomain.length > 253) {
+      return res.status(400).json({ 
+        error: 'Domain too long',
+        details: `Domain name cannot exceed 253 characters. Current length: ${cleanDomain.length}`,
+        code: 'DOMAIN_TOO_LONG'
+      });
     }
     
     const newDomain = {
-      name: domain,
-      status: 'active',
+      name: cleanDomain,
+      status: status || 'active',
       addedAt: new Date(),
       emailsGenerated: 0
     };
@@ -2005,7 +2039,7 @@ app.post('/api/admin/domains', authenticateToken, async (req, res) => {
     const log = {
       id: uuidv4(),
       action: 'DOMAIN_ADDED',
-      domain: domain,
+      domain: cleanDomain,
       timestamp: new Date(),
       ip: req.ip
     };
@@ -2015,10 +2049,18 @@ app.post('/api/admin/domains', authenticateToken, async (req, res) => {
     io.emit('domainAdded', newDomain);
     io.emit('newLog', log);
     
-    res.json({ success: true, domain: newDomain });
+    res.json({ 
+      success: true, 
+      domain: newDomain,
+      message: `Domain '${cleanDomain}' added successfully`
+    });
   } catch (error) {
     console.error('Add domain error:', error);
-    res.status(500).json({ error: 'Failed to add domain' });
+    res.status(500).json({ 
+      error: 'Failed to add domain',
+      details: error.message || 'Internal server error occurred while adding domain',
+      code: 'SERVER_ERROR'
+    });
   }
 });
 
@@ -2863,7 +2905,7 @@ app.delete('/api/temp-email/:emailId/messages', apiLimiter, async (req, res) => 
 });
 
 // Create custom email with specific prefix
-app.post('/api/temp-email', apiLimiter, [
+app.post('/api/temp-email/create', apiLimiter, [
   body('email').isEmail().withMessage('Invalid email format'),
   body('customPrefix').optional().isBoolean()
 ], async (req, res) => {
