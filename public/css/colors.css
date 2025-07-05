@@ -1,5 +1,10 @@
 /* RedMail Admin Panel - Global Color Scheme */
+
+/* Welcome Message Constants */
 :root {
+  --welcome-message: "Welcome to our app";
+  
+  /* Color Variables */
   /* Primary Colors */
   --primary-color: #2563eb;
   --primary-hover: #1d4ed8;
