@@ -686,7 +686,7 @@ class RedMailApp {
                     padding: 1rem 1.5rem;
                     color: var(--white);
                     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                    z-index: 3000;
+                    z-index: var(--z-toast);
                     display: flex;
                     align-items: center;
                     gap: 0.5rem;

@@ -665,7 +665,7 @@ class AdminPanel {
                     border-radius: var(--radius-md);
                     padding: 1rem;
                     box-shadow: var(--shadow-lg);
-                    z-index: 1000;
+                    z-index: var(--z-toast);
                     min-width: 300px;
                     animation: slideInRight 0.3s ease-out;
                 }
