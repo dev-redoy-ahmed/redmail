@@ -1,3 +1,26 @@
+/**
+ * RedMail - Temporary Email Service (RECEIVE ONLY)
+ * 
+ * SECURITY NOTICE: This system is designed exclusively for receiving emails.
+ * All outgoing email functionality has been disabled for security purposes.
+ * No email sending capabilities are available in this system.
+ * NO SMTP CLIENT OR EMAIL SENDING LIBRARIES ARE ALLOWED
+ */
+
+// SECURITY: Block any attempt to require email sending libraries
+const originalRequire = require;
+require = function(id) {
+  const blockedModules = ['nodemailer', 'sendmail', 'emailjs', 'smtp-client', 'node-smtp-client', 'sendgrid', 'mailgun', 'aws-ses', 'postmark'];
+  // Allow legitimate email parsing libraries but block sending libraries
+  const allowedModules = ['mailparser', 'mail-parser', 'email-parser'];
+  
+  if (blockedModules.some(module => id.toLowerCase().includes(module.toLowerCase())) && 
+      !allowedModules.some(allowed => id.toLowerCase().includes(allowed.toLowerCase()))) {
+    throw new Error(`SECURITY BLOCK: Email sending module '${id}' is permanently blocked. This system is RECEIVE-ONLY.`);
+  }
+  return originalRequire.apply(this, arguments);
+};
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -246,6 +269,48 @@ app.use(cors({
   credentials: true
 }));
 
+// Security Middleware - Block all outgoing email functionality
+app.use((req, res, next) => {
+  // Add security headers
+  res.setHeader('X-RedMail-Mode', 'RECEIVE-ONLY');
+  res.setHeader('X-Email-Sending', 'DISABLED');
+  
+  // Block any email sending endpoints
+  const blockedPaths = [
+    '/send',
+    '/mail/send',
+    '/email/send',
+    '/smtp/send',
+    '/api/send',
+    '/api/mail/send',
+    '/api/email/send',
+    '/api/smtp/send',
+    '/send-email',
+    '/send-mail',
+    '/sendmail',
+    '/mail-send',
+    '/email-send'
+  ];
+  
+  const isBlockedPath = blockedPaths.some(path => 
+    req.path.toLowerCase().includes(path.toLowerCase()) ||
+    req.path.toLowerCase().includes('send') && req.path.toLowerCase().includes('mail') ||
+    req.path.toLowerCase().includes('send') && req.path.toLowerCase().includes('email') ||
+    req.path.toLowerCase().includes('send') && req.path.toLowerCase().includes('otp')
+  );
+  
+  if (isBlockedPath && req.method !== 'GET') {
+    return res.status(403).json({
+      error: 'Email sending is permanently disabled',
+      message: 'This system is designed exclusively for receiving emails',
+      mode: 'RECEIVE-ONLY',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  next();
+});
+
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -455,6 +520,22 @@ const deleteMessageFromRedis = async (emailId, messageId) => {
       return true;
     }
     return false;
+  }
+};
+
+const clearMessagesFromRedis = async (emailId) => {
+  if (redisConnected && client) {
+    try {
+      await client.del(REDIS_KEYS.MESSAGES + emailId);
+      return true;
+    } catch (error) {
+      console.warn('Redis messages clear failed, using memory store:', error.message);
+      memoryStore.messages.delete(emailId);
+      return true;
+    }
+  } else {
+    memoryStore.messages.delete(emailId);
+    return true;
   }
 };
 
@@ -743,6 +824,7 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
 });
 
 // Generate temporary email endpoint
+// Generate random temporary email
 app.post('/api/temp-email/generate', apiLimiter, async (req, res) => {
   try {
     const emailId = uuidv4();
@@ -754,7 +836,8 @@ app.post('/api/temp-email/generate', apiLimiter, async (req, res) => {
       createdAt: new Date(),
       expiresAt: new Date(Date.now() + CONFIG.EMAIL_EXPIRY_TIME * 60 * 1000), // Dynamic expiry time
       messageCount: 0,
-      domain: selectedDomain
+      domain: selectedDomain,
+      type: 'random'
     };
 
     await saveEmailToRedis(tempEmail);
@@ -785,6 +868,100 @@ app.post('/api/temp-email/generate', apiLimiter, async (req, res) => {
   } catch (error) {
     console.error('Email generation error:', error);
     res.status(500).json({ error: 'Failed to generate temporary email' });
+  }
+});
+
+// Create custom temporary email
+app.post('/api/temp-email/create-custom', apiLimiter, [
+  body('name').isLength({ min: 1, max: 50 }).matches(/^[a-zA-Z0-9._-]+$/).withMessage('Invalid email name format'),
+  body('domain').isLength({ min: 1 }).withMessage('Domain is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg });
+    }
+
+    const { name, domain } = req.body;
+    
+    // Check if domain exists and is active
+    const domainData = await getDomainFromRedis(domain);
+    if (!domainData) {
+      return res.status(400).json({ error: 'Domain not found' });
+    }
+    if (domainData.status !== 'active') {
+      return res.status(400).json({ error: 'Domain is not active' });
+    }
+
+    const customEmail = `${name}@${domain}`;
+    
+    // Check if email already exists
+    const existingEmails = await getEmailsFromRedis();
+    const emailExists = existingEmails.some(e => e.email === customEmail);
+    if (emailExists) {
+      return res.status(400).json({ error: 'Email already exists' });
+    }
+
+    const emailId = uuidv4();
+    const tempEmail = {
+      id: emailId,
+      email: customEmail,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + CONFIG.EMAIL_EXPIRY_TIME * 60 * 1000),
+      messageCount: 0,
+      domain: domain,
+      type: 'custom',
+      customName: name
+    };
+
+    await saveEmailToRedis(tempEmail);
+    await incrementDomainEmailCount(domain);
+
+    // Log the creation
+    const log = {
+      id: uuidv4(),
+      action: 'CUSTOM_EMAIL_CREATED',
+      email: tempEmail.email,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+
+    // Emit real-time update
+    io.emit('emailGenerated', tempEmail);
+    io.emit('newLog', log);
+    io.to(`email_id:${tempEmail.id}`).emit('emailCreated', tempEmail);
+
+    res.json({
+      success: true,
+      email: tempEmail.email,
+      id: tempEmail.id,
+      expiresAt: tempEmail.expiresAt,
+      domain: domain,
+      type: 'custom'
+    });
+  } catch (error) {
+    console.error('Custom email creation error:', error);
+    res.status(500).json({ error: 'Failed to create custom email' });
+  }
+});
+
+// Get available domains for email creation
+app.get('/api/domains/available', apiLimiter, async (req, res) => {
+  try {
+    const domains = await getDomainsFromRedis();
+    const activeDomains = domains.filter(d => d.status === 'active').map(d => ({
+      name: d.name,
+      emailsGenerated: d.emailsGenerated || 0
+    }));
+    
+    res.json({
+      success: true,
+      domains: activeDomains
+    });
+  } catch (error) {
+    console.error('Get available domains error:', error);
+    res.status(500).json({ error: 'Failed to fetch available domains' });
   }
 });
 
@@ -1625,87 +1802,15 @@ app.get('/api/admin/test-smtp', authenticateToken, async (req, res) => {
   }
 });
 
-// Send test OTP email endpoint
+// Send test OTP email endpoint - BLOCKED FOR SECURITY
+// This endpoint has been disabled to prevent any outgoing email functionality
 app.post('/api/admin/send-test-otp', authenticateToken, async (req, res) => {
-  try {
-    const { targetEmail } = req.body;
-    
-    if (!targetEmail) {
-      return res.status(400).json({ error: 'Target email is required' });
-    }
-    
-    // Generate OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // Create test message
-    const testMessage = {
-      id: uuidv4(),
-      from: 'noreply@' + CONFIG.EMAIL_DOMAIN,
-      to: targetEmail,
-      subject: 'Your OTP Code - RedMail Test',
-      text: `Your OTP code is: ${otp}\n\nThis is a test message from RedMail system.\n\nThe OTP will expire in 5 minutes.`,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h2 style="color: #333; text-align: center;">Your OTP Code</h2>
-          <div style="background: #f8f9fa; border: 2px solid #007bff; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
-            <h1 style="color: #007bff; font-size: 36px; margin: 0; letter-spacing: 5px;">${otp}</h1>
-          </div>
-          <p style="color: #666; text-align: center;">This is a test message from RedMail system.</p>
-          <p style="color: #666; text-align: center; font-size: 14px;">The OTP will expire in 5 minutes.</p>
-          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="color: #999; font-size: 12px; text-align: center;">This email was sent from RedMail Admin Panel</p>
-        </div>
-      `,
-      date: new Date(),
-      attachments: []
-    };
-    
-    // Find the target email in Redis
-    const emails = await getEmailsFromRedis();
-    const targetTempEmail = emails.find(e => e.email === targetEmail);
-    
-    if (!targetTempEmail) {
-      return res.status(404).json({ error: 'Target email not found in system' });
-    }
-    
-    if (new Date() > new Date(targetTempEmail.expiresAt)) {
-      return res.status(410).json({ error: 'Target email has expired' });
-    }
-    
-    // Save message to Redis
-    await saveMessageToRedis(targetTempEmail.id, testMessage);
-    
-    // Update message count
-    targetTempEmail.messageCount = (targetTempEmail.messageCount || 0) + 1;
-    await saveEmailToRedis(targetTempEmail);
-    
-    // Log the test
-    const log = {
-      id: uuidv4(),
-      action: 'TEST_OTP_SENT',
-      email: targetEmail,
-      timestamp: new Date(),
-      ip: req.ip,
-      otp: otp
-    };
-    await saveLogToRedis(log);
-    
-    // Emit real-time update
-    io.emit('messageReceived', { email: targetEmail, message: testMessage });
-    io.emit('newLog', log);
-    
-    res.json({
-      success: true,
-      message: 'Test OTP email sent successfully',
-      otp: otp, // For admin reference
-      targetEmail: targetEmail,
-      sentAt: new Date()
-    });
-    
-  } catch (error) {
-    console.error('Send test OTP error:', error);
-    res.status(500).json({ error: 'Failed to send test OTP' });
-  }
+  // Email sending functionality is completely blocked
+  // This system is designed only for receiving emails
+  res.status(403).json({ 
+    error: 'Email sending is disabled', 
+    message: 'This system only supports receiving emails. Outgoing email functionality is blocked for security.' 
+  });
 });
 
 // Settings API endpoints
@@ -1822,7 +1927,7 @@ app.post('/api/admin/domains', authenticateToken, async (req, res) => {
     }
     
     const newDomain = {
-      domain,
+      name: domain,
       status: 'active',
       addedAt: new Date(),
       emailsGenerated: 0
@@ -2060,21 +2165,7 @@ app.get('/api/attachments/:attachmentId/info', attachmentLimiter, async (req, re
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`🚀 RedMail Admin Server running on port ${PORT}`);
-  console.log(`📧 Admin Panel: http://localhost:${PORT}/admin`);
-  console.log(`🔒 API Base: http://localhost:${PORT}/api`);
-  console.log(`🌐 VPS IP: ${CONFIG.VPS_IP}`);
-  console.log(`📮 Email Domain: ${CONFIG.EMAIL_DOMAIN}`);
-  console.log(`⚙️  Email Expiry: ${CONFIG.EMAIL_EXPIRY_TIME} minutes`);
-  console.log(`📦 Message Retention: ${CONFIG.MESSAGE_RETENTION_TIME} hours`);
-  console.log(`🔄 Real-time Push: ${CONFIG.REALTIME_API_PUSH ? 'Enabled' : 'Disabled'}`);
-  
-  // SMTP server disabled for local development to avoid port conflicts
-  console.log('⚠️  SMTP server disabled for local development');
-  // setupSMTPServer();
-  // startSMTPServer();
-});
+// Server will be started by initializeApp() function
 
 // Start SMTP server for receiving emails
 const startSMTPServer = () => {
@@ -2233,5 +2324,347 @@ const startSMTPServer = () => {
     console.log('⚠️  SMTP server disabled. Install dependencies: npm install smtp-server');
   }
 };
+
+// ===== COMPREHENSIVE API ENDPOINTS =====
+
+// Get all emails for a user (inbox)
+app.get('/api/inbox/emails', apiLimiter, async (req, res) => {
+  try {
+    const { limit = 50, offset = 0, domain } = req.query;
+    const emails = await getEmailsFromRedis();
+    
+    let filteredEmails = emails;
+    if (domain) {
+      filteredEmails = emails.filter(e => e.domain === domain);
+    }
+    
+    // Sort by creation date (newest first)
+    filteredEmails.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    // Apply pagination
+    const paginatedEmails = filteredEmails.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+    
+    // Get message counts for each email
+    const emailsWithCounts = await Promise.all(paginatedEmails.map(async (email) => {
+      const messages = await getMessagesFromRedis(email.id);
+      return {
+        ...email,
+        messageCount: messages.length,
+        hasUnread: messages.some(m => !m.read),
+        lastMessageAt: messages.length > 0 ? messages[messages.length - 1].receivedAt : null
+      };
+    }));
+    
+    res.json({
+      success: true,
+      emails: emailsWithCounts,
+      total: filteredEmails.length,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+  } catch (error) {
+    console.error('Get inbox emails error:', error);
+    res.status(500).json({ error: 'Failed to fetch inbox emails' });
+  }
+});
+
+// Get inbox for specific email
+app.get('/api/inbox/:emailId', apiLimiter, async (req, res) => {
+  try {
+    const { emailId } = req.params;
+    const { limit = 20, offset = 0 } = req.query;
+    
+    const email = await getEmailFromRedis(emailId);
+    if (!email) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+    
+    if (new Date() > new Date(email.expiresAt)) {
+      return res.status(410).json({ error: 'Email expired' });
+    }
+    
+    const messages = await getMessagesFromRedis(emailId);
+    
+    // Sort by received date (newest first)
+    messages.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+    
+    // Apply pagination
+    const paginatedMessages = messages.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+    
+    res.json({
+      success: true,
+      email: {
+        id: email.id,
+        email: email.email,
+        domain: email.domain,
+        type: email.type,
+        createdAt: email.createdAt,
+        expiresAt: email.expiresAt
+      },
+      messages: paginatedMessages,
+      total: messages.length,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      unreadCount: messages.filter(m => !m.read).length
+    });
+  } catch (error) {
+    console.error('Get inbox error:', error);
+    res.status(500).json({ error: 'Failed to fetch inbox' });
+  }
+});
+
+// Mark message as read
+app.patch('/api/message/:messageId/read', apiLimiter, async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    
+    // Find message across all emails
+    const emails = await getEmailsFromRedis();
+    let foundMessage = null;
+    let emailId = null;
+    
+    for (const email of emails) {
+      const messages = await getMessagesFromRedis(email.id);
+      const message = messages.find(m => m.id === messageId);
+      if (message) {
+        foundMessage = message;
+        emailId = email.id;
+        break;
+      }
+    }
+    
+    if (!foundMessage) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+    
+    // Mark as read
+    foundMessage.read = true;
+    foundMessage.readAt = new Date();
+    
+    await saveMessageToRedis(foundMessage, emailId);
+    
+    // Emit real-time update
+    io.to(`email_id:${emailId}`).emit('messageRead', { messageId, readAt: foundMessage.readAt });
+    
+    res.json({
+      success: true,
+      message: 'Message marked as read',
+      readAt: foundMessage.readAt
+    });
+  } catch (error) {
+    console.error('Mark message as read error:', error);
+    res.status(500).json({ error: 'Failed to mark message as read' });
+  }
+});
+
+// Clear all messages from inbox
+app.delete('/api/inbox/:emailId/clear', apiLimiter, async (req, res) => {
+  try {
+    const { emailId } = req.params;
+    
+    const email = await getEmailFromRedis(emailId);
+    if (!email) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+    
+    // Get all messages for deletion
+    const messages = await getMessagesFromRedis(emailId);
+    
+    // Delete all attachments
+    for (const message of messages) {
+      if (message.attachments) {
+        for (const attachment of message.attachments) {
+          try {
+            await fs.promises.unlink(attachment.filePath);
+          } catch (err) {
+            console.warn(`Failed to delete attachment file: ${attachment.filePath}`);
+          }
+        }
+      }
+    }
+    
+    // Clear messages from storage
+    await clearMessagesFromRedis(emailId);
+    
+    // Update email message count
+    email.messageCount = 0;
+    await saveEmailToRedis(email);
+    
+    // Log the action
+    const log = {
+      id: uuidv4(),
+      action: 'INBOX_CLEARED',
+      email: email.email,
+      messagesDeleted: messages.length,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    // Emit real-time update
+    io.to(`email_id:${emailId}`).emit('inboxCleared');
+    io.emit('newLog', log);
+    
+    res.json({
+      success: true,
+      message: 'Inbox cleared successfully',
+      deletedCount: messages.length
+    });
+  } catch (error) {
+    console.error('Clear inbox error:', error);
+    res.status(500).json({ error: 'Failed to clear inbox' });
+  }
+});
+
+// Get email statistics
+app.get('/api/stats/email/:emailId', apiLimiter, async (req, res) => {
+  try {
+    const { emailId } = req.params;
+    
+    const email = await getEmailFromRedis(emailId);
+    if (!email) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+    
+    const messages = await getMessagesFromRedis(emailId);
+    
+    const stats = {
+      totalMessages: messages.length,
+      unreadMessages: messages.filter(m => !m.read).length,
+      readMessages: messages.filter(m => m.read).length,
+      messagesWithAttachments: messages.filter(m => m.attachments && m.attachments.length > 0).length,
+      totalAttachments: messages.reduce((sum, m) => sum + (m.attachments ? m.attachments.length : 0), 0),
+      lastMessageAt: messages.length > 0 ? messages[messages.length - 1].receivedAt : null,
+      emailAge: Math.floor((new Date() - new Date(email.createdAt)) / (1000 * 60)), // in minutes
+      timeUntilExpiry: Math.max(0, Math.floor((new Date(email.expiresAt) - new Date()) / (1000 * 60))) // in minutes
+    };
+    
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('Get email stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch email statistics' });
+  }
+});
+
+// Search messages
+app.get('/api/search/messages', apiLimiter, async (req, res) => {
+  try {
+    const { q, emailId, limit = 20, offset = 0 } = req.query;
+    
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+    }
+    
+    const searchTerm = q.toLowerCase().trim();
+    let searchResults = [];
+    
+    if (emailId) {
+      // Search within specific email
+      const email = await getEmailFromRedis(emailId);
+      if (!email) {
+        return res.status(404).json({ error: 'Email not found' });
+      }
+      
+      const messages = await getMessagesFromRedis(emailId);
+      searchResults = messages.filter(message => 
+        message.subject.toLowerCase().includes(searchTerm) ||
+        message.from.toLowerCase().includes(searchTerm) ||
+        (message.text && message.text.toLowerCase().includes(searchTerm)) ||
+        (message.html && message.html.toLowerCase().includes(searchTerm))
+      ).map(message => ({ ...message, emailId, emailAddress: email.email }));
+    } else {
+      // Search across all emails
+      const emails = await getEmailsFromRedis();
+      
+      for (const email of emails) {
+        const messages = await getMessagesFromRedis(email.id);
+        const matchingMessages = messages.filter(message => 
+          message.subject.toLowerCase().includes(searchTerm) ||
+          message.from.toLowerCase().includes(searchTerm) ||
+          (message.text && message.text.toLowerCase().includes(searchTerm)) ||
+          (message.html && message.html.toLowerCase().includes(searchTerm))
+        ).map(message => ({ ...message, emailId: email.id, emailAddress: email.email }));
+        
+        searchResults.push(...matchingMessages);
+      }
+    }
+    
+    // Sort by received date (newest first)
+    searchResults.sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt));
+    
+    // Apply pagination
+    const paginatedResults = searchResults.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+    
+    res.json({
+      success: true,
+      results: paginatedResults,
+      total: searchResults.length,
+      query: q,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+  } catch (error) {
+    console.error('Search messages error:', error);
+    res.status(500).json({ error: 'Failed to search messages' });
+  }
+});
+
+// Initialize default domains
+const initializeDefaultDomains = async () => {
+  try {
+    const existingDomains = await getDomainsFromRedis();
+    
+    // Default domains to add if none exist
+    const defaultDomains = [
+      { name: 'oplex.online', status: 'active', addedAt: new Date(), emailsGenerated: 0 },
+      { name: 'tempmail.dev', status: 'active', addedAt: new Date(), emailsGenerated: 0 },
+      { name: 'quickmail.io', status: 'active', addedAt: new Date(), emailsGenerated: 0 },
+      { name: 'fastmail.temp', status: 'active', addedAt: new Date(), emailsGenerated: 0 }
+    ];
+    
+    // Add default domains if no domains exist
+    if (existingDomains.length === 0) {
+      console.log('🌐 Initializing default domains...');
+      for (const domain of defaultDomains) {
+        await saveDomainToRedis(domain);
+        console.log(`✅ Added default domain: ${domain.name}`);
+      }
+    } else {
+      console.log(`🌐 Found ${existingDomains.length} existing domains`);
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize default domains:', error);
+  }
+};
+
+// Initialize the application
+const initializeApp = async () => {
+  await initializeDefaultDomains();
+  
+  // Start the server
+  server.listen(PORT, () => {
+    console.log('🔄 Cleanup scheduler restarted: every 30 minutes');
+    console.log(`🚀 RedMail Admin Server running on port ${PORT}`);
+    console.log(`📧 Admin Panel: http://localhost:${PORT}/admin`);
+    console.log(`🔒 API Base: http://localhost:${PORT}/api`);
+    console.log(`🌐 VPS IP: ${CONFIG.VPS_IP}`);
+    console.log(`📮 Email Domain: ${CONFIG.EMAIL_DOMAIN}`);
+    console.log(`⚙️  Email Expiry: ${CONFIG.EMAIL_EXPIRY_TIME} minutes`);
+    console.log(`📦 Message Retention: ${CONFIG.MESSAGE_RETENTION_TIME} hours`);
+    console.log(`🔄 Real-time Push: ${CONFIG.REALTIME_API_PUSH ? 'Enabled' : 'Disabled'}`);
+    
+    if (CONFIG.NODE_ENV === 'development') {
+      console.log('⚠️  SMTP server disabled for local development');
+    } else {
+      startSMTPServer();
+    }
+  });
+};
+
+// Start the application
+initializeApp();
 
 module.exports = app;

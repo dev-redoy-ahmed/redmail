@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RedMail - Temporary Email Service</title>
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/colors.css">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-envelope"></i>
+                    <span>RedMail</span>
+                </div>
+                <nav class="nav">
+                    <a href="#home">Home</a>
+                    <a href="#features">Features</a>
+                    <a href="#api">API</a>
+                    <a href="/admin" class="admin-link">Admin Panel</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Hero Section -->
+        <section id="home" class="hero">
+            <div class="container">
+                <div class="hero-content">
+                    <h1>Temporary Email Service</h1>
+                    <p>Get a disposable email address instantly. No registration required!</p>
+                    
+                    <!-- Email Generation Options -->
+                    <div class="email-options">
+                        <div class="option-tabs">
+                            <button class="tab-btn active" data-tab="random">Random Email</button>
+                            <button class="tab-btn" data-tab="custom">Custom Email</button>
+                        </div>
+                        
+                        <!-- Random Email Tab -->
+                        <div class="tab-content active" id="random-tab">
+                            <div class="email-generator">
+                                <div class="current-email-container">
+                                    <div class="email-display">
+                                        <span id="currentEmail" class="loading">Generating...</span>
+                                        <button id="copyEmailBtn" class="copy-btn" title="Copy Email">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                    <button id="refreshEmailBtn" class="refresh-btn">
+                                        <i class="fas fa-sync-alt"></i> Generate New
+                                    </button>
+                                </div>
+                                
+                                <div class="email-info">
+                                    <div class="info-item">
+                                        <i class="fas fa-clock"></i>
+                                        <span>Expires in: <span id="expiryTime">--</span></span>
+                                    </div>
+                                    <div class="info-item">
+                                        <i class="fas fa-envelope"></i>
+                                        <span>Messages: <span id="messageCount">0</span></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Custom Email Tab -->
+                        <div class="tab-content" id="custom-tab">
+                            <div class="custom-email-form">
+                                <h3>Create Custom Email</h3>
+                                <div class="form-group">
+                                    <label for="customName">Email Name:</label>
+                                    <div class="email-input-group">
+                                        <input type="text" id="customName" placeholder="Enter name" maxlength="50">
+                                        <span class="at-symbol">@</span>
+                                        <select id="domainSelect">
+                                            <option value="">Loading domains...</option>
+                                        </select>
+                                    </div>
+                                    <small class="help-text">Only letters, numbers, dots, hyphens and underscores allowed</small>
+                                </div>
+                                <button id="createCustomEmailBtn" class="create-btn" disabled>
+                                    <i class="fas fa-plus"></i> Create Email
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Inbox Section -->
+        <section id="inbox" class="inbox-section">
+            <div class="container">
+                <div class="inbox-header">
+                    <h2><i class="fas fa-inbox"></i> Inbox</h2>
+                    <div class="inbox-actions">
+                        <button id="refreshInboxBtn" class="btn-secondary">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                        <button id="clearInboxBtn" class="btn-danger">
+                            <i class="fas fa-trash"></i> Clear All
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="inbox-content">
+                    <div id="messagesContainer" class="messages-container">
+                        <div class="no-messages">
+                            <i class="fas fa-inbox"></i>
+                            <p>No messages yet. Your temporary email is ready to receive emails!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section id="features" class="features-section">
+            <div class="container">
+                <h2>Features</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <i class="fas fa-bolt"></i>
+                        <h3>Instant Generation</h3>
+                        <p>Get a temporary email address instantly without any registration</p>
+                    </div>
+                    <div class="feature-card">
+                        <i class="fas fa-shield-alt"></i>
+                        <h3>Privacy Protected</h3>
+                        <p>Your privacy is protected. No personal information required</p>
+                    </div>
+                    <div class="feature-card">
+                        <i class="fas fa-clock"></i>
+                        <h3>Auto Expiry</h3>
+                        <p>Emails automatically expire after 60 minutes for security</p>
+                    </div>
+                    <div class="feature-card">
+                        <i class="fas fa-mobile-alt"></i>
+                        <h3>Mobile Friendly</h3>
+                        <p>Works perfectly on all devices - desktop, tablet, and mobile</p>
+                    </div>
+                    <div class="feature-card">
+                        <i class="fas fa-download"></i>
+                        <h3>Attachment Support</h3>
+                        <p>Receive and download email attachments safely</p>
+                    </div>
+                    <div class="feature-card">
+                        <i class="fas fa-code"></i>
+                        <h3>API Access</h3>
+                        <p>Full REST API for developers to integrate with applications</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- API Section -->
+        <section id="api" class="api-section">
+            <div class="container">
+                <h2>API Documentation</h2>
+                <div class="api-content">
+                    <div class="api-endpoints">
+                        <h3>Available Endpoints</h3>
+                        
+                        <div class="endpoint">
+                            <div class="method post">POST</div>
+                            <div class="url">/api/temp-email/generate</div>
+                            <div class="description">Generate a random temporary email</div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <div class="method post">POST</div>
+                            <div class="url">/api/temp-email/create-custom</div>
+                            <div class="description">Create a custom temporary email</div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <div class="method get">GET</div>
+                            <div class="url">/api/domains/available</div>
+                            <div class="description">Get available domains for email creation</div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <div class="method get">GET</div>
+                            <div class="url">/api/inbox/:emailId</div>
+                            <div class="description">Get inbox messages for specific email</div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <div class="method get">GET</div>
+                            <div class="url">/api/message/:messageId</div>
+                            <div class="description">Get specific message details</div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <div class="method delete">DELETE</div>
+                            <div class="url">/api/message/:messageId</div>
+                            <div class="description">Delete a specific message</div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <div class="method delete">DELETE</div>
+                            <div class="url">/api/inbox/:emailId/clear</div>
+                            <div class="description">Clear all messages from inbox</div>
+                        </div>
+                        
+                        <div class="endpoint">
+                            <div class="method get">GET</div>
+                            <div class="url">/api/search/messages</div>
+                            <div class="description">Search messages across emails</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Message Modal -->
+    <div id="messageModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalSubject">Email Subject</h3>
+                <div class="modal-actions">
+                    <button id="deleteMessageBtn" class="btn-danger">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <button id="closeModal" class="close-btn">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="message-meta">
+                    <div class="meta-item">
+                        <strong>From:</strong> <span id="modalFrom"></span>
+                    </div>
+                    <div class="meta-item">
+                        <strong>Date:</strong> <span id="modalDate"></span>
+                    </div>
+                    <div class="meta-item" id="modalAttachmentsContainer" style="display: none;">
+                        <strong>Attachments:</strong>
+                        <div id="modalAttachments"></div>
+                    </div>
+                </div>
+                <div class="message-content">
+                    <div id="modalContent"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="closeModalBtn" class="btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>RedMail</h4>
+                    <p>Secure temporary email service for your privacy needs.</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Features</h4>
+                    <ul>
+                        <li>Instant email generation</li>
+                        <li>Custom email creation</li>
+                        <li>Multiple domain support</li>
+                        <li>API access</li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Security</h4>
+                    <ul>
+                        <li>Auto-expiring emails</li>
+                        <li>No registration required</li>
+                        <li>Privacy protected</li>
+                        <li>Secure attachment handling</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 RedMail. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

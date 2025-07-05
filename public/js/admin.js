@@ -191,11 +191,6 @@ class AdminPanel {
             this.testConnectivity();
         });
 
-        // Test OTP button
-        document.getElementById('testOTP').addEventListener('click', () => {
-            this.showOTPTestModal();
-        });
-
         // Save settings button
         document.getElementById('saveSettings').addEventListener('click', () => {
             this.saveSettings();
@@ -512,142 +507,8 @@ class AdminPanel {
         }
     }
 
-    showOTPTestModal() {
-        const modal = document.createElement('div');
-        modal.className = 'modal';
-        modal.style.display = 'flex';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3><i class="fas fa-paper-plane"></i> Test OTP Email</h3>
-                    <button class="modal-close">&times;</button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">Select Target Email:</label>
-                        <select class="form-input" id="targetEmailSelect">
-                            <option value="">Loading emails...</option>
-                        </select>
-                        <small class="form-help">Choose a temporary email to send test OTP</small>
-                    </div>
-                    <div id="otpTestResult"></div>
-                    <button class="btn btn-success" id="sendTestOTP" disabled>
-                        <i class="fas fa-paper-plane"></i>
-                        Send Test OTP
-                    </button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(modal);
-
-        // Close modal events
-        modal.querySelector('.modal-close').addEventListener('click', () => {
-            document.body.removeChild(modal);
-        });
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                document.body.removeChild(modal);
-            }
-        });
-
-        // Load emails for selection
-        this.loadEmailsForOTPTest(modal);
-
-        // Send OTP button
-        modal.querySelector('#sendTestOTP').addEventListener('click', () => {
-            this.sendTestOTP(modal);
-        });
-    }
-
-    async loadEmailsForOTPTest(modal) {
-        try {
-            const response = await this.apiCall('/api/admin/emails?limit=50');
-            const select = modal.querySelector('#targetEmailSelect');
-            const button = modal.querySelector('#sendTestOTP');
-            
-            if (response.emails.length === 0) {
-                select.innerHTML = '<option value="">No active emails found</option>';
-                return;
-            }
-
-            const activeEmails = response.emails.filter(email => 
-                new Date(email.expiresAt) > new Date()
-            );
-
-            if (activeEmails.length === 0) {
-                select.innerHTML = '<option value="">No active emails found</option>';
-                return;
-            }
-
-            select.innerHTML = `
-                <option value="">Select an email...</option>
-                ${activeEmails.map(email => 
-                    `<option value="${email.email}">${email.email} (${email.messageCount || 0} messages)</option>`
-                ).join('')}
-            `;
-
-            select.addEventListener('change', () => {
-                button.disabled = !select.value;
-            });
-
-        } catch (error) {
-            console.error('Failed to load emails:', error);
-            modal.querySelector('#targetEmailSelect').innerHTML = 
-                '<option value="">Failed to load emails</option>';
-        }
-    }
-
-    async sendTestOTP(modal) {
-        const resultDiv = modal.querySelector('#otpTestResult');
-        const button = modal.querySelector('#sendTestOTP');
-        const select = modal.querySelector('#targetEmailSelect');
-        const targetEmail = select.value;
-        
-        if (!targetEmail) {
-            resultDiv.innerHTML = `
-                <div class="alert alert-error">
-                    <i class="fas fa-exclamation-circle"></i>
-                    Please select a target email first.
-                </div>
-            `;
-            return;
-        }
-
-        button.disabled = true;
-        button.innerHTML = '<span class="loading"></span> Sending OTP...';
-        
-        try {
-            const response = await this.apiCall('/api/admin/send-test-otp', 'POST', {
-                targetEmail: targetEmail
-            });
-            
-            resultDiv.innerHTML = `
-                <div class="alert alert-success">
-                    <h4><i class="fas fa-check-circle"></i> Test OTP Sent Successfully!</h4>
-                    <p><strong>Target Email:</strong> ${response.targetEmail}</p>
-                    <p><strong>OTP Code:</strong> <code style="font-size: 1.2em; font-weight: bold; color: #007bff;">${response.otp}</code></p>
-                    <p><strong>Sent At:</strong> ${new Date(response.sentAt).toLocaleString()}</p>
-                    <div class="mt-2">
-                        <small class="text-info">
-                            <i class="fas fa-info-circle"></i>
-                            Check the Messages tab to see the OTP email in the admin panel.
-                        </small>
-                    </div>
-                </div>
-            `;
-        } catch (error) {
-            resultDiv.innerHTML = `
-                <div class="alert alert-error">
-                    <h4><i class="fas fa-exclamation-circle"></i> Failed to Send OTP</h4>
-                    <p>${error.message}</p>
-                </div>
-            `;
-        } finally {
-            button.disabled = false;
-            button.innerHTML = '<i class="fas fa-paper-plane"></i> Send Test OTP';
-        }
-    }
+    // OTP Test functionality has been completely removed
+    // This system is designed exclusively for receiving emails
 
     async apiCall(endpoint, method = 'GET', data = null) {
         const options = {
@@ -675,31 +536,82 @@ class AdminPanel {
     initSocketIO() {
         if (!this.token) return;
         
-        // Initialize Socket.IO connection
-        this.socket = io();
+        // Set initial connecting status
+        this.updateConnectionStatus('connecting', 'সংযোগ করা হচ্ছে...');
+        
+        // Initialize Socket.IO connection with enhanced options
+        this.socket = io({
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 20000
+        });
         
         // Handle connection events
         this.socket.on('connect', () => {
-            console.log('Socket.IO connected for real-time updates');
-            this.showNotification('Connected to real-time updates', 'success');
+            console.log('🔗 Socket.IO connected for real-time updates');
+            this.updateConnectionStatus('online', 'রিয়েল-টাইম সংযুক্ত');
+            this.showNotification('✅ রিয়েল-টাইম আপডেট সক্রিয়', 'success');
         });
         
-        this.socket.on('disconnect', () => {
-            console.log('Socket.IO disconnected');
-            this.showNotification('Disconnected from real-time updates', 'warning');
+        this.socket.on('reconnect', () => {
+            console.log('🔄 Socket.IO reconnected');
+            this.updateConnectionStatus('online', 'রিয়েল-টাইম সংযুক্ত');
+            this.showNotification('🔄 রিয়েল-টাইম পুনরায় সংযুক্ত', 'success');
+        });
+        
+        this.socket.on('disconnect', (reason) => {
+            console.log('❌ Socket.IO disconnected:', reason);
+            this.updateConnectionStatus('offline', 'সংযোগ বিচ্ছিন্ন');
+            this.showNotification('⚠️ রিয়েল-টাইম সংযোগ বিচ্ছিন্ন', 'warning');
+        });
+        
+        this.socket.on('connect_error', (error) => {
+            console.error('❌ Socket.IO connection error:', error);
+            this.updateConnectionStatus('offline', 'সংযোগ ত্রুটি');
         });
         
         // Handle real-time email notifications
         this.socket.on('messageReceived', (data) => {
-            console.log('New message received:', data);
+            console.log('📨 New message received:', data);
             this.handleNewMessage(data);
+        });
+        
+        this.socket.on('newMessage', (data) => {
+            console.log('📧 New message for test inbox:', data);
+            this.handleTestInboxMessage(data);
         });
         
         // Handle real-time log notifications
         this.socket.on('newLog', (data) => {
-            console.log('New log entry:', data);
+            console.log('📝 New log entry:', data);
             this.handleNewLog(data);
         });
+    }
+    
+    updateConnectionStatus(status, text) {
+        const indicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        
+        if (indicator && statusText) {
+            // Remove all status classes
+            indicator.classList.remove('online', 'offline', 'connecting');
+            // Add current status class
+            indicator.classList.add(status);
+            statusText.textContent = text;
+        }
+    }
+    
+    handleTestInboxMessage(data) {
+        // Handle new messages for test inbox in real-time
+        if (this.currentPage === 'test-inbox' && this.currentTestEmail) {
+            if (data.emailId === this.currentTestEmail.id) {
+                console.log('✅ Adding new message to test inbox');
+                this.refreshTestInboxMessages();
+                this.showNotification('📧 নতুন টেস্ট ইমেইল এসেছে!', 'success');
+            }
+        }
     }
     
     handleNewMessage(data) {

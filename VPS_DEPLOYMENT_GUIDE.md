@@ -172,11 +172,10 @@ pm2 logs redmail
 2. Send test email to: `test@oplex.online`
 3. Check if email appears in admin panel
 
-### 3. Test OTP System
-1. Go to Admin Panel → Settings
-2. Click "Send Test OTP"
-3. Select a temporary email
-4. Verify OTP delivery
+### 3. Security Verification
+1. Confirm no outgoing email functionality is available
+2. Verify system only receives emails
+3. Test real-time email reception
 
 ## 🔒 Security Recommendations
 

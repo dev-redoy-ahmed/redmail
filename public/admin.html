@@ -408,16 +408,11 @@
                             <i class="fas fa-check-circle"></i>
                             Test System Connectivity
                         </button>
-                        <button class="btn btn-success ml-2" id="testOTP">
-                            <i class="fas fa-paper-plane"></i>
-                            Send Test OTP
-                        </button>
                         <button class="btn btn-info ml-2" onclick="window.open('/index.html', '_blank')">
                             <i class="fas fa-envelope"></i>
                             Test Mail
                         </button>
                         <div id="connectivityResult" class="mt-3"></div>
-                        <div id="otpTestResult" class="mt-3"></div>
                     </div>
                 </div>
                     
@@ -456,13 +451,18 @@
                         <div class="card-header">
                             <h3 class="card-title">Test Inbox - Temporary Email Testing</h3>
                             <div class="card-actions">
+                                <!-- Real-time Connection Status -->
+                                <div class="connection-status" id="connectionStatus">
+                                    <span class="status-indicator offline" id="statusIndicator"></span>
+                                    <span class="status-text" id="statusText">Connecting...</span>
+                                </div>
                                 <button class="btn btn-primary" id="generateNewTestEmail">
                                     <i class="fas fa-plus"></i>
                                     Generate New Email
                                 </button>
-                                <button class="btn btn-success" id="refreshTestInbox">
+                                <button class="btn btn-success" id="refreshTestInbox" style="display: none;">
                                     <i class="fas fa-sync-alt"></i>
-                                    Refresh
+                                    Refresh (Not Needed)
                                 </button>
                             </div>
                         </div>

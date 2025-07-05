@@ -6,6 +6,8 @@ class RedMailApp {
         this.refreshInterval = null;
         this.expiryInterval = null;
         this.socket = null;
+        this.availableDomains = [];
+        this.currentTab = 'random';
         
         this.init();
     }
@@ -13,14 +15,25 @@ class RedMailApp {
     init() {
         this.bindEvents();
         this.initializeSocket();
+        this.loadAvailableDomains();
         this.generateNewEmail();
         this.startAutoRefresh();
     }
     
     bindEvents() {
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+        });
+        
         // Email actions
         document.getElementById('copyEmailBtn').addEventListener('click', () => this.copyEmail());
         document.getElementById('refreshEmailBtn').addEventListener('click', () => this.generateNewEmail());
+        
+        // Custom email creation
+        document.getElementById('customName').addEventListener('input', () => this.validateCustomEmail());
+        document.getElementById('domainSelect').addEventListener('change', () => this.validateCustomEmail());
+        document.getElementById('createCustomEmailBtn').addEventListener('click', () => this.createCustomEmail());
         
         // Inbox actions
         document.getElementById('refreshInboxBtn').addEventListener('click', () => this.refreshInbox());
@@ -55,27 +68,185 @@ class RedMailApp {
     
     initializeSocket() {
         try {
-            this.socket = io();
-            
-            this.socket.on('connect', () => {
-                console.log('Connected to server');
+            this.socket = io({
+                reconnection: true,
+                reconnectionAttempts: Infinity,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                timeout: 20000
             });
             
-            this.socket.on('newMessage', (data) => {
-                if (this.currentEmail && data.emailId === this.currentEmail.id) {
-                    this.refreshInbox();
-                    this.showNotification('New message received!', 'success');
+            this.socket.on('connect', () => {
+                console.log('🔗 Connected to server - Real-time mode enabled');
+                // Join email-specific room when email is available
+                if (this.currentEmail) {
+                    this.socket.emit('joinEmail', this.currentEmail.id);
+                    console.log(`📧 Joined room for email: ${this.currentEmail.id}`);
                 }
             });
             
-            this.socket.on('disconnect', () => {
-                console.log('Disconnected from server');
+            this.socket.on('reconnect', () => {
+                console.log('🔄 Reconnected to server');
+                // Rejoin email room after reconnection
+                if (this.currentEmail) {
+                    this.socket.emit('joinEmail', this.currentEmail.id);
+                    console.log(`📧 Rejoined room for email: ${this.currentEmail.id}`);
+                }
+            });
+            
+            this.socket.on('newMessage', (data) => {
+                console.log('📨 New message received:', data);
+                if (this.currentEmail && data.emailId === this.currentEmail.id) {
+                    // Add message directly to the list without full refresh
+                    this.addNewMessageToInbox(data.message);
+                    this.showNotification('📧 নতুন ইমেইল এসেছে!', 'success');
+                } else {
+                    console.log('Message not for current email or no email selected');
+                }
+            });
+            
+            this.socket.on('disconnect', (reason) => {
+                console.log('❌ Disconnected from server:', reason);
+            });
+            
+            this.socket.on('connect_error', (error) => {
+                console.error('❌ Connection error:', error);
             });
         } catch (error) {
             console.warn('Socket.IO not available:', error);
         }
     }
     
+    // Tab switching functionality
+    switchTab(tabName) {
+        this.currentTab = tabName;
+        
+        // Update tab buttons
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+        });
+        
+        // Update tab content
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.toggle('active', content.id === `${tabName}-tab`);
+        });
+    }
+    
+    // Load available domains
+    async loadAvailableDomains() {
+        try {
+            const response = await fetch('/api/domains/available');
+            if (!response.ok) {
+                throw new Error('Failed to load domains');
+            }
+            
+            const data = await response.json();
+            if (data.success) {
+                this.availableDomains = data.domains;
+                this.populateDomainSelect();
+            }
+        } catch (error) {
+            console.error('Error loading domains:', error);
+            this.showError('Failed to load available domains');
+        }
+    }
+    
+    // Populate domain select dropdown
+    populateDomainSelect() {
+        const select = document.getElementById('domainSelect');
+        select.innerHTML = '<option value="">Select a domain</option>';
+        
+        this.availableDomains.forEach(domain => {
+            const option = document.createElement('option');
+            option.value = domain;
+            option.textContent = domain;
+            select.appendChild(option);
+        });
+    }
+    
+    // Validate custom email input
+    validateCustomEmail() {
+        const nameInput = document.getElementById('customName');
+        const domainSelect = document.getElementById('domainSelect');
+        const createBtn = document.getElementById('createCustomEmailBtn');
+        
+        const name = nameInput.value.trim();
+        const domain = domainSelect.value;
+        
+        // Validate name format (letters, numbers, dots, hyphens, underscores)
+        const nameRegex = /^[a-zA-Z0-9._-]+$/;
+        const isValidName = name.length > 0 && name.length <= 50 && nameRegex.test(name);
+        const isValidDomain = domain !== '';
+        
+        // Update input styling
+        nameInput.classList.toggle('invalid', name.length > 0 && !isValidName);
+        
+        // Enable/disable create button
+        createBtn.disabled = !(isValidName && isValidDomain);
+    }
+    
+    // Create custom email
+    async createCustomEmail() {
+        const nameInput = document.getElementById('customName');
+        const domainSelect = document.getElementById('domainSelect');
+        const createBtn = document.getElementById('createCustomEmailBtn');
+        
+        const name = nameInput.value.trim();
+        const domain = domainSelect.value;
+        
+        if (!name || !domain) {
+            this.showError('Please enter a name and select a domain');
+            return;
+        }
+        
+        try {
+            createBtn.disabled = true;
+            createBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
+            
+            const response = await fetch('/api/temp-email/create-custom', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name, domain })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.currentEmail = data;
+                this.displayEmail(data.email);
+                this.updateEmailInfo(data);
+                this.clearMessages();
+                this.startExpiryCountdown(data.expiresAt);
+                
+                // Switch to random tab to show the created email
+                this.switchTab('random');
+                
+                // Clear custom form
+                nameInput.value = '';
+                domainSelect.value = '';
+                this.validateCustomEmail();
+                
+                // Join Socket.IO room for real-time updates
+                if (this.socket && this.socket.connected) {
+                    this.socket.emit('joinEmail', data.id);
+                    console.log(`📧 Joined room for custom email: ${data.id}`);
+                }
+                
+                this.showNotification('Custom email created successfully!', 'success');
+            } else {
+                throw new Error(data.error || 'Failed to create custom email');
+            }
+        } catch (error) {
+            console.error('Error creating custom email:', error);
+            this.showError(error.message || 'Failed to create custom email. Please try again.');
+        } finally {
+            createBtn.disabled = false;
+            createBtn.innerHTML = '<i class="fas fa-plus"></i> Create Email';
+        }
+    }
+
     async generateNewEmail() {
         try {
             this.showLoading('currentEmail', 'Generating new email...');
@@ -84,7 +255,8 @@ class RedMailApp {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
-                }
+                },
+                body: JSON.stringify({ type: 'random' })
             });
             
             if (!response.ok) {
@@ -98,12 +270,12 @@ class RedMailApp {
                 this.displayEmail(data.email);
                 this.updateEmailInfo(data);
                 this.clearMessages();
-                this.refreshInbox();
                 this.startExpiryCountdown(data.expiresAt);
                 
-                // Join socket room for this email
-                if (this.socket) {
+                // Join Socket.IO room for real-time updates
+                if (this.socket && this.socket.connected) {
                     this.socket.emit('joinEmail', data.id);
+                    console.log(`📧 Joined room for new email: ${data.id}`);
                 }
             } else {
                 throw new Error(data.error || 'Failed to generate email');
@@ -183,7 +355,7 @@ class RedMailApp {
         if (!this.currentEmail) return;
         
         try {
-            const response = await fetch(`/api/temp-email/${this.currentEmail.id}/messages`);
+            const response = await fetch(`/api/inbox/${this.currentEmail.id}?page=1&limit=50`);
             
             if (!response.ok) {
                 throw new Error('Failed to fetch messages');
@@ -195,6 +367,11 @@ class RedMailApp {
                 this.messages = data.messages || [];
                 this.displayMessages();
                 this.updateMessageCount();
+                
+                // Update unread count if available
+                if (data.unreadCount !== undefined) {
+                    console.log(`📧 Unread messages: ${data.unreadCount}`);
+                }
             } else {
                 throw new Error(data.error || 'Failed to fetch messages');
             }
@@ -231,7 +408,7 @@ class RedMailApp {
                 `<span class="expiry-countdown" title="Message expires in ${message.timeRemaining}">🕒 ${message.timeRemaining}</span>` : '';
             
             return `
-                <div class="message-item ${message.isExpired ? 'expired' : ''}" onclick="app.openMessage('${message.id}')">
+                <div class="message-item ${message.isExpired ? 'expired' : ''}" data-message-id="${message.id}" onclick="app.openMessage('${message.id}')">
                     <div class="message-header">
                         <div class="message-from">
                             ${this.escapeHtml(message.from)}
@@ -441,14 +618,24 @@ class RedMailApp {
         }
         
         try {
-            const deletePromises = this.messages.map(message => 
-                fetch(`/api/message/${message.id}`, { method: 'DELETE' })
-            );
+            const response = await fetch(`/api/inbox/${this.currentEmail.id}/clear`, {
+                method: 'DELETE'
+            });
             
-            await Promise.all(deletePromises);
+            if (!response.ok) {
+                throw new Error('Failed to clear inbox');
+            }
             
-            this.showNotification('All messages deleted successfully', 'success');
-            this.refreshInbox();
+            const data = await response.json();
+            
+            if (data.success) {
+                this.messages = [];
+                this.displayMessages();
+                this.updateMessageCount();
+                this.showNotification(`Successfully cleared ${data.deletedCount} messages`, 'success');
+            } else {
+                throw new Error(data.error || 'Failed to clear inbox');
+            }
         } catch (error) {
             console.error('Error clearing inbox:', error);
             this.showError('Failed to clear inbox');
@@ -462,12 +649,9 @@ class RedMailApp {
     }
     
     startAutoRefresh() {
-        // Refresh inbox every 30 seconds
-        this.refreshInterval = setInterval(() => {
-            if (this.currentEmail) {
-                this.refreshInbox();
-            }
-        }, 30000);
+        // Real-time mode - no polling needed
+        // Messages will appear instantly via Socket.IO
+        console.log('📧 Real-time mode active - No refresh intervals needed');
     }
     
     showLoading(elementId, message) {
@@ -565,6 +749,57 @@ class RedMailApp {
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    addNewMessageToInbox(message) {
+        try {
+            // Validate message object
+            if (!message || !message.id) {
+                console.error('Invalid message received:', message);
+                return;
+            }
+            
+            // Check for duplicate messages to ensure 100% reliability
+            const existingMessage = this.messages.find(msg => msg.id === message.id);
+            if (existingMessage) {
+                console.log('Duplicate message detected, skipping:', message.id);
+                return;
+            }
+            
+            console.log('✅ Adding new message to inbox:', message.id);
+            
+            // Add new message to the beginning of the messages array
+            this.messages.unshift(message);
+            
+            // Update display immediately
+            this.displayMessages();
+            this.updateMessageCount();
+            
+            // Visual feedback - highlight new message
+            setTimeout(() => {
+                const messageElement = document.querySelector(`[data-message-id="${message.id}"]`);
+                if (messageElement) {
+                    messageElement.classList.add('new-message-highlight');
+                    setTimeout(() => {
+                        messageElement.classList.remove('new-message-highlight');
+                    }, 3000);
+                }
+            }, 100);
+            
+            // Scroll to top to show new message
+            const messagesContainer = document.getElementById('messagesList');
+            if (messagesContainer) {
+                messagesContainer.scrollTop = 0;
+            }
+            
+            console.log(`📧 Message successfully added. Total messages: ${this.messages.length}`);
+            
+        } catch (error) {
+            console.error('Error adding message to inbox:', error);
+            // Fallback: try to refresh inbox if real-time fails
+            console.log('Attempting fallback refresh...');
+            this.refreshInbox();
+        }
     }
     
     getCurrentAttachment(attachmentId) {

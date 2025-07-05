@@ -12,8 +12,7 @@ A modern, real-time temporary email service with admin panel built using Node.js
 - 🗃️ **Redis Storage**: Fast and efficient data storage
 - 📱 **Responsive Design**: Works on all devices
 - 🌐 **Haraka SMTP Server**: High-performance email reception (Port 25)
-- 🚀 **VPS Ready**: Production-ready deployment scripts
-- 🧪 **OTP Testing**: Built-in OTP email testing system
+- 🛡️ **Receive Only**: No outgoing email functionality for security
 - 🚀 **Enhanced Performance**: Haraka provides better throughput and resource management
 - 🔧 **Plugin Architecture**: Modular SMTP server with custom plugins
 
@@ -155,14 +154,13 @@ const CONFIG = {
 - `GET /api/admin/stats` - Get statistics
 - `DELETE /api/admin/emails/:id` - Delete email
 - `GET /api/admin/test-smtp` - Test SMTP connectivity
-- `POST /api/admin/send-test-otp` - Send test OTP email
 
-## 🧪 Testing OTP System
+## 🔒 Security Notice
 
-1. Generate a temporary email from admin panel
-2. Go to Settings → Send Test OTP
-3. Select the temporary email
-4. Check the OTP delivery in real-time
+**This system is designed exclusively for receiving emails only.**
+- Outgoing email functionality is completely blocked for security
+- No email sending capabilities are available
+- Perfect for temporary email receiving services
 
 ## 📁 Project Structure
 
