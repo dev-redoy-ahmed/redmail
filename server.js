@@ -13,6 +13,15 @@ const { simpleParser } = require('mailparser');
 const redis = require('redis');
 const { Server } = require('socket.io');
 const http = require('http');
+const crypto = require('crypto');
+const multer = require('multer');
+const mime = require('mime-types');
+
+// Create attachment storage directory if it doesn't exist
+if (!fs.existsSync('./attachments')) {
+  fs.mkdirSync('./attachments', { recursive: true });
+  console.log('📁 Created attachments directory');
+}
 
 // Configuration object - replace environment variables
 const CONFIG = {
@@ -58,7 +67,14 @@ const CONFIG = {
   EMAIL_EXPIRY_TIME: 60, // minutes
   MESSAGE_RETENTION_TIME: 24, // hours
   REALTIME_API_PUSH: true,
-  AUTO_REFRESH_INTERVAL: 5 // seconds
+  AUTO_REFRESH_INTERVAL: 5, // seconds
+  
+  // Attachment Configuration
+  MAX_ATTACHMENT_SIZE: 5 * 1024 * 1024, // 5MB per email
+  MAX_ATTACHMENTS_PER_EMAIL: 10,
+  ALLOWED_ATTACHMENT_TYPES: ['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar'],
+  ATTACHMENT_STORAGE_PATH: './attachments',
+  ATTACHMENT_CLEANUP_HOURS: 24
 };
 
 const app = express();
@@ -137,6 +153,7 @@ const ADMIN_PASSWORD_HASH = CONFIG.ADMIN_PASSWORD_HASH;
 // Redis connection with graceful fallback
 let client;
 let redisConnected = false;
+let redisErrorLogged = false;
 
 try {
   client = redis.createClient({
@@ -148,27 +165,48 @@ try {
   // Connect to Redis
   client.connect().then(() => {
     redisConnected = true;
+    redisErrorLogged = false;
     console.log('✅ Connected to Redis server');
   }).catch((err) => {
-    console.warn('⚠️  Redis not available, running in memory mode:', err.message);
+    if (!redisErrorLogged) {
+      console.warn('⚠️  Redis not available, running in memory mode:', err.message);
+      redisErrorLogged = true;
+    }
     redisConnected = false;
+    client = null;
   });
 
   client.on('error', (err) => {
-    console.warn('⚠️  Redis connection error, falling back to memory mode:', err.message);
+    if (!redisErrorLogged) {
+      console.warn('⚠️  Redis connection error, falling back to memory mode:', err.message);
+      redisErrorLogged = true;
+    }
     redisConnected = false;
   });
 } catch (error) {
-  console.warn('⚠️  Redis not available, running in memory mode');
+  if (!redisErrorLogged) {
+    console.warn('⚠️  Redis not available, running in memory mode');
+    redisErrorLogged = true;
+  }
   redisConnected = false;
+  client = null;
 }
 
 // In-memory fallback storage
 const memoryStore = {
   emails: new Map(),
   logs: [],
-  messages: new Map()
+  messages: new Map(),
+  domains: new Map()
 };
+
+// Initialize default domain
+memoryStore.domains.set('oplex.online', {
+  name: 'oplex.online',
+  status: 'active',
+  addedAt: new Date(),
+  emailsGenerated: 0
+});
 
 // HTTPS Redirect Middleware (only in production)
 if (CONFIG.NODE_ENV === 'production') {
@@ -255,6 +293,14 @@ io.on('connection', (socket) => {
     }
   });
   
+  // Handle email ID subscription
+  socket.on('joinEmail', (emailId) => {
+    if (emailId) {
+      socket.join(`email_id:${emailId}`);
+      console.log(`Client joined email room: ${emailId}`);
+    }
+  });
+  
   // Handle email unsubscription
   socket.on('unsubscribe:email', (emailAddress) => {
     if (emailAddress) {
@@ -286,6 +332,20 @@ const saveEmailToRedis = async (email) => {
     }
   } else {
     memoryStore.emails.set(email.id, email);
+  }
+};
+
+const getEmailFromRedis = async (emailId) => {
+  if (redisConnected && client) {
+    try {
+      const emailData = await client.hGet(REDIS_KEYS.EMAILS, emailId);
+      return emailData ? JSON.parse(emailData) : null;
+    } catch (error) {
+      console.warn('Redis get failed, using memory store:', error.message);
+      return memoryStore.emails.get(emailId) || null;
+    }
+  } else {
+    return memoryStore.emails.get(emailId) || null;
   }
 };
 
@@ -363,6 +423,268 @@ const getMessagesFromRedis = async (emailId) => {
   }
 };
 
+const deleteMessageFromRedis = async (emailId, messageId) => {
+  if (redisConnected && client) {
+    try {
+      const messages = await client.lRange(REDIS_KEYS.MESSAGES + emailId, 0, -1);
+      const filteredMessages = messages.filter(msgStr => {
+        const message = JSON.parse(msgStr);
+        return message.id !== messageId;
+      });
+      
+      await client.del(REDIS_KEYS.MESSAGES + emailId);
+      if (filteredMessages.length > 0) {
+        await client.lPush(REDIS_KEYS.MESSAGES + emailId, ...filteredMessages);
+      }
+      return true;
+    } catch (error) {
+      console.warn('Redis message delete failed, using memory store:', error.message);
+      const messages = memoryStore.messages.get(emailId) || [];
+      const messageIndex = messages.findIndex(m => m.id === messageId);
+      if (messageIndex !== -1) {
+        messages.splice(messageIndex, 1);
+        return true;
+      }
+      return false;
+    }
+  } else {
+    const messages = memoryStore.messages.get(emailId) || [];
+    const messageIndex = messages.findIndex(m => m.id === messageId);
+    if (messageIndex !== -1) {
+      messages.splice(messageIndex, 1);
+      return true;
+    }
+    return false;
+  }
+};
+
+// Domain management helper functions
+const saveDomainToRedis = async (domain) => {
+  if (redisConnected && client) {
+    try {
+      await client.hSet('domains', domain.name, JSON.stringify(domain));
+    } catch (error) {
+      console.warn('Redis domain save failed, using memory store:', error.message);
+      memoryStore.domains.set(domain.name, domain);
+    }
+  } else {
+    memoryStore.domains.set(domain.name, domain);
+  }
+};
+
+const getDomainsFromRedis = async () => {
+  if (redisConnected && client) {
+    try {
+      const domains = await client.hGetAll('domains');
+      return Object.values(domains).map(domain => JSON.parse(domain));
+    } catch (error) {
+      console.warn('Redis domain get failed, using memory store:', error.message);
+      return Array.from(memoryStore.domains.values());
+    }
+  } else {
+    return Array.from(memoryStore.domains.values());
+  }
+};
+
+const getDomainFromRedis = async (domainName) => {
+  if (redisConnected && client) {
+    try {
+      const domainData = await client.hGet('domains', domainName);
+      return domainData ? JSON.parse(domainData) : null;
+    } catch (error) {
+      console.warn('Redis domain get failed, using memory store:', error.message);
+      return memoryStore.domains.get(domainName) || null;
+    }
+  } else {
+    return memoryStore.domains.get(domainName) || null;
+  }
+};
+
+const deleteDomainFromRedis = async (domainName) => {
+  if (redisConnected && client) {
+    try {
+      await client.hDel('domains', domainName);
+      return true;
+    } catch (error) {
+      console.warn('Redis domain delete failed, using memory store:', error.message);
+      return memoryStore.domains.delete(domainName);
+    }
+  } else {
+    return memoryStore.domains.delete(domainName);
+  }
+};
+
+const getRandomActiveDomain = async () => {
+  const domains = await getDomainsFromRedis();
+  const activeDomains = domains.filter(d => d.status === 'active');
+  if (activeDomains.length === 0) {
+    return 'oplex.online'; // fallback to default
+  }
+  return activeDomains[Math.floor(Math.random() * activeDomains.length)].name;
+};
+
+const incrementDomainEmailCount = async (domainName) => {
+  const domain = await getDomainFromRedis(domainName);
+  if (domain) {
+    domain.emailsGenerated = (domain.emailsGenerated || 0) + 1;
+    await saveDomainToRedis(domain);
+  }
+};
+
+// Attachment helper functions
+const saveAttachmentToStorage = async (attachment, emailId) => {
+  try {
+    const attachmentId = uuidv4();
+    const sanitizedFilename = attachment.filename.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const fileExtension = path.extname(sanitizedFilename).toLowerCase().substring(1);
+    
+    // Validate file type
+    if (!CONFIG.ALLOWED_ATTACHMENT_TYPES.includes(fileExtension)) {
+      throw new Error(`File type .${fileExtension} not allowed`);
+    }
+    
+    // Validate file size
+    if (attachment.size > CONFIG.MAX_ATTACHMENT_SIZE) {
+      throw new Error(`File size exceeds ${CONFIG.MAX_ATTACHMENT_SIZE / (1024 * 1024)}MB limit`);
+    }
+    
+    const fileName = `${attachmentId}_${sanitizedFilename}`;
+    const filePath = path.join(CONFIG.ATTACHMENT_STORAGE_PATH, fileName);
+    
+    // Save file to disk
+    fs.writeFileSync(filePath, attachment.content);
+    
+    const attachmentData = {
+      id: attachmentId,
+      originalName: attachment.filename,
+      fileName: fileName,
+      filePath: filePath,
+      size: attachment.size,
+      mimeType: attachment.contentType || mime.lookup(sanitizedFilename) || 'application/octet-stream',
+      emailId: emailId,
+      uploadedAt: new Date(),
+      expiresAt: new Date(Date.now() + CONFIG.ATTACHMENT_CLEANUP_HOURS * 60 * 60 * 1000),
+      downloadCount: 0,
+      secureToken: crypto.randomBytes(32).toString('hex')
+    };
+    
+    // Save attachment metadata
+    await saveAttachmentMetadata(attachmentData);
+    
+    return {
+      id: attachmentId,
+      name: attachment.filename,
+      size: attachment.size,
+      type: attachmentData.mimeType,
+      downloadUrl: `/api/attachments/${attachmentId}/download?token=${attachmentData.secureToken}`
+    };
+  } catch (error) {
+    console.error('Attachment save error:', error);
+    throw error;
+  }
+};
+
+const saveAttachmentMetadata = async (attachmentData) => {
+  if (redisConnected && client) {
+    try {
+      await client.hSet('attachments', attachmentData.id, JSON.stringify(attachmentData));
+      await client.expire('attachments', CONFIG.ATTACHMENT_CLEANUP_HOURS * 60 * 60);
+    } catch (error) {
+      console.warn('Redis attachment save failed, using memory store:', error.message);
+      if (!memoryStore.attachments) memoryStore.attachments = new Map();
+      memoryStore.attachments.set(attachmentData.id, attachmentData);
+    }
+  } else {
+    if (!memoryStore.attachments) memoryStore.attachments = new Map();
+    memoryStore.attachments.set(attachmentData.id, attachmentData);
+  }
+};
+
+const getAttachmentMetadata = async (attachmentId) => {
+  if (redisConnected && client) {
+    try {
+      const attachmentData = await client.hGet('attachments', attachmentId);
+      return attachmentData ? JSON.parse(attachmentData) : null;
+    } catch (error) {
+      console.warn('Redis attachment get failed, using memory store:', error.message);
+      return memoryStore.attachments?.get(attachmentId) || null;
+    }
+  } else {
+    return memoryStore.attachments?.get(attachmentId) || null;
+  }
+};
+
+const deleteAttachmentFile = async (attachmentId) => {
+  try {
+    const attachment = await getAttachmentMetadata(attachmentId);
+    if (attachment && fs.existsSync(attachment.filePath)) {
+      fs.unlinkSync(attachment.filePath);
+    }
+    
+    // Remove metadata
+    if (redisConnected && client) {
+      try {
+        await client.hDel('attachments', attachmentId);
+      } catch (error) {
+        console.warn('Redis attachment delete failed:', error.message);
+      }
+    }
+    
+    if (memoryStore.attachments) {
+      memoryStore.attachments.delete(attachmentId);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Attachment delete error:', error);
+    return false;
+  }
+};
+
+const cleanupExpiredAttachments = async () => {
+  try {
+    const now = new Date();
+    
+    if (redisConnected && client) {
+      try {
+        const attachments = await client.hGetAll('attachments');
+        for (const [id, data] of Object.entries(attachments)) {
+          const attachment = JSON.parse(data);
+          if (new Date(attachment.expiresAt) < now) {
+            await deleteAttachmentFile(id);
+          }
+        }
+      } catch (error) {
+        console.warn('Redis attachment cleanup failed:', error.message);
+      }
+    }
+    
+    if (memoryStore.attachments) {
+      for (const [id, attachment] of memoryStore.attachments.entries()) {
+        if (new Date(attachment.expiresAt) < now) {
+          await deleteAttachmentFile(id);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Attachment cleanup error:', error);
+  }
+};
+
+// Calculate time remaining until expiration
+const getTimeRemaining = (expiresAt) => {
+  const now = new Date();
+  const expiry = new Date(expiresAt);
+  const diff = expiry - now;
+  
+  if (diff <= 0) return '00:00';
+  
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+};
+
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -424,16 +746,19 @@ app.get('/api/auth/verify', authenticateToken, (req, res) => {
 app.post('/api/temp-email/generate', apiLimiter, async (req, res) => {
   try {
     const emailId = uuidv4();
-    const domain = `@${CONFIG.EMAIL_DOMAIN}`;
+    const selectedDomain = await getRandomActiveDomain();
+    const domain = `@${selectedDomain}`;
     const tempEmail = {
       id: emailId,
       email: `${emailId.substring(0, 8)}${domain}`,
       createdAt: new Date(),
       expiresAt: new Date(Date.now() + CONFIG.EMAIL_EXPIRY_TIME * 60 * 1000), // Dynamic expiry time
-      messageCount: 0
+      messageCount: 0,
+      domain: selectedDomain
     };
 
     await saveEmailToRedis(tempEmail);
+    await incrementDomainEmailCount(selectedDomain);
 
     // Log the generation
     const log = {
@@ -445,15 +770,17 @@ app.post('/api/temp-email/generate', apiLimiter, async (req, res) => {
     };
     await saveLogToRedis(log);
 
-    // Emit real-time update to admin panel
+    // Emit real-time update to admin panel and email subscribers
     io.emit('emailGenerated', tempEmail);
     io.emit('newLog', log);
+    io.to(`email_id:${tempEmail.id}`).emit('emailCreated', tempEmail);
 
     res.json({
       success: true,
       email: tempEmail.email,
       id: tempEmail.id,
-      expiresAt: tempEmail.expiresAt
+      expiresAt: tempEmail.expiresAt,
+      domain: selectedDomain
     });
   } catch (error) {
     console.error('Email generation error:', error);
@@ -477,10 +804,37 @@ app.get('/api/temp-email/:emailId/messages', apiLimiter, async (req, res) => {
     }
 
     const messages = await getMessagesFromRedis(emailId);
+    
+    // Enhance messages with attachment info and countdown timers
+    const enhancedMessages = messages.map(message => {
+      const enhancedMessage = {
+        ...message,
+        timeRemaining: message.expiresAt ? getTimeRemaining(message.expiresAt) : null,
+        isExpired: message.expiresAt ? new Date() > new Date(message.expiresAt) : false
+      };
+      
+      // Process attachments if they exist
+      if (message.attachments && message.attachments.length > 0) {
+        enhancedMessage.attachments = message.attachments.map(attachment => ({
+          id: attachment.id,
+          name: attachment.name,
+          size: attachment.size,
+          type: attachment.type,
+          downloadUrl: attachment.downloadUrl,
+          timeRemaining: getTimeRemaining(new Date(Date.now() + CONFIG.ATTACHMENT_CLEANUP_HOURS * 60 * 60 * 1000))
+        }));
+      }
+      
+      return enhancedMessage;
+    });
 
     res.json({
       success: true,
-      messages: messages
+      messages: enhancedMessages,
+      emailTimeRemaining: getTimeRemaining(tempEmail.expiresAt),
+      totalMessages: enhancedMessages.length,
+      hasAttachments: enhancedMessages.some(m => m.hasAttachments),
+      totalAttachments: enhancedMessages.reduce((total, m) => total + (m.attachmentCount || 0), 0)
     });
   } catch (error) {
     console.error('Get messages error:', error);
@@ -497,18 +851,15 @@ app.get('/api/message/:messageId', apiLimiter, async (req, res) => {
     let foundMessage = null;
     
     if (redisConnected && client) {
-      // Redis implementation
-      const emailIds = await client.sMembers('emails');
-      for (const emailId of emailIds) {
-        const messages = await client.lRange(`messages:${emailId}`, 0, -1);
-        for (const msgStr of messages) {
-          const message = JSON.parse(msgStr);
-          if (message.id === messageId) {
-            foundMessage = message;
-            break;
-          }
+      // Redis implementation - search through all email messages
+      const emails = await getEmailsFromRedis();
+      for (const email of emails) {
+        const messages = await getMessagesFromRedis(email.id);
+        const message = messages.find(m => m.id === messageId);
+        if (message) {
+          foundMessage = message;
+          break;
         }
-        if (foundMessage) break;
       }
     } else {
       // Memory implementation
@@ -527,11 +878,88 @@ app.get('/api/message/:messageId', apiLimiter, async (req, res) => {
     
     res.json({
       success: true,
-      ...foundMessage
+      message: foundMessage
     });
   } catch (error) {
     console.error('Get message error:', error);
     res.status(500).json({ error: 'Failed to retrieve message' });
+  }
+});
+
+// Get email by ID
+app.get('/api/temp-email/:emailId', apiLimiter, async (req, res) => {
+  try {
+    const { emailId } = req.params;
+    const emails = await getEmailsFromRedis();
+    const tempEmail = emails.find(e => e.id === emailId);
+
+    if (!tempEmail) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+
+    if (new Date() > new Date(tempEmail.expiresAt)) {
+      return res.status(410).json({ error: 'Email expired' });
+    }
+
+    res.json({
+      success: true,
+      email: tempEmail
+    });
+  } catch (error) {
+    console.error('Get email error:', error);
+    res.status(500).json({ error: 'Failed to retrieve email' });
+  }
+});
+
+// Delete email by ID
+app.delete('/api/temp-email/:emailId', apiLimiter, async (req, res) => {
+  try {
+    const { emailId } = req.params;
+    
+    let emailDeleted = false;
+    
+    if (redisConnected && client) {
+      // Redis implementation
+      const emailData = await client.hGet(REDIS_KEYS.EMAILS, emailId);
+      if (emailData) {
+        await client.hDel(REDIS_KEYS.EMAILS, emailId);
+        await client.del(REDIS_KEYS.MESSAGES + emailId);
+        emailDeleted = true;
+      }
+    } else {
+      // Memory implementation
+      if (memoryStore.emails.has(emailId)) {
+        memoryStore.emails.delete(emailId);
+        memoryStore.messages.delete(emailId);
+        emailDeleted = true;
+      }
+    }
+    
+    if (!emailDeleted) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+    
+    // Log the deletion
+    const log = {
+      id: uuidv4(),
+      action: 'EMAIL_DELETED',
+      emailId: emailId,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    // Emit real-time update
+    io.emit('emailDeleted', { emailId });
+    io.emit('newLog', log);
+    
+    res.json({
+      success: true,
+      message: 'Email deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete email error:', error);
+    res.status(500).json({ error: 'Failed to delete email' });
   }
 });
 
@@ -541,39 +969,38 @@ app.delete('/api/message/:messageId', apiLimiter, async (req, res) => {
     const { messageId } = req.params;
     
     let messageDeleted = false;
+    let emailId = null;
     
     if (redisConnected && client) {
-      // Redis implementation
-      const emailIds = await client.sMembers('emails');
-      for (const emailId of emailIds) {
-        const messages = await client.lRange(`messages:${emailId}`, 0, -1);
-        const updatedMessages = [];
+      // Redis implementation - search through all email messages
+      const emails = await getEmailsFromRedis();
+      for (const email of emails) {
+        const messages = await getMessagesFromRedis(email.id);
+        const messageIndex = messages.findIndex(m => m.id === messageId);
         
-        for (const msgStr of messages) {
-          const message = JSON.parse(msgStr);
-          if (message.id !== messageId) {
-            updatedMessages.push(msgStr);
-          } else {
-            messageDeleted = true;
-          }
-        }
-        
-        if (messageDeleted) {
+        if (messageIndex !== -1) {
+          messages.splice(messageIndex, 1);
+          
           // Clear and repopulate the list
-          await client.del(`messages:${emailId}`);
-          if (updatedMessages.length > 0) {
-            await client.lPush(`messages:${emailId}`, ...updatedMessages);
+          await client.del(REDIS_KEYS.MESSAGES + email.id);
+          if (messages.length > 0) {
+            const messageStrings = messages.map(m => JSON.stringify(m));
+            await client.lPush(REDIS_KEYS.MESSAGES + email.id, ...messageStrings);
           }
+          
+          messageDeleted = true;
+          emailId = email.id;
           break;
         }
       }
     } else {
       // Memory implementation
-      for (const [emailId, messages] of memoryStore.messages) {
+      for (const [eId, messages] of memoryStore.messages) {
         const messageIndex = messages.findIndex(m => m.id === messageId);
         if (messageIndex !== -1) {
           messages.splice(messageIndex, 1);
           messageDeleted = true;
+          emailId = eId;
           break;
         }
       }
@@ -588,13 +1015,14 @@ app.delete('/api/message/:messageId', apiLimiter, async (req, res) => {
       id: uuidv4(),
       action: 'MESSAGE_DELETED',
       messageId: messageId,
+      emailId: emailId,
       timestamp: new Date(),
       ip: req.ip
     };
     await saveLogToRedis(log);
     
     // Emit real-time update
-    io.emit('messageDeleted', { messageId });
+    io.emit('messageDeleted', { messageId, emailId });
     io.emit('newLog', log);
     
     res.json({
@@ -1359,6 +1787,138 @@ app.post('/api/admin/settings', authenticateToken, async (req, res) => {
   }
 });
 
+// Domain Management API Endpoints
+
+// Get all domains
+app.get('/api/admin/domains', authenticateToken, async (req, res) => {
+  try {
+    const domains = await getDomainsFromRedis();
+    res.json({ success: true, domains });
+  } catch (error) {
+    console.error('Get domains error:', error);
+    res.status(500).json({ error: 'Failed to fetch domains' });
+  }
+});
+
+// Add new domain
+app.post('/api/admin/domains', authenticateToken, async (req, res) => {
+  try {
+    const { domain } = req.body;
+    
+    if (!domain || typeof domain !== 'string') {
+      return res.status(400).json({ error: 'Domain is required' });
+    }
+    
+    // Validate domain format
+    const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$/;
+    if (!domainRegex.test(domain)) {
+      return res.status(400).json({ error: 'Invalid domain format' });
+    }
+    
+    // Check if domain already exists
+    const existingDomain = await getDomainFromRedis(domain);
+    if (existingDomain) {
+      return res.status(400).json({ error: 'Domain already exists' });
+    }
+    
+    const newDomain = {
+      domain,
+      status: 'active',
+      addedAt: new Date(),
+      emailsGenerated: 0
+    };
+    
+    await saveDomainToRedis(newDomain);
+    
+    // Log the domain addition
+    const log = {
+      id: uuidv4(),
+      action: 'DOMAIN_ADDED',
+      domain: domain,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    // Emit real-time update
+    io.emit('domainAdded', newDomain);
+    io.emit('newLog', log);
+    
+    res.json({ success: true, domain: newDomain });
+  } catch (error) {
+    console.error('Add domain error:', error);
+    res.status(500).json({ error: 'Failed to add domain' });
+  }
+});
+
+// Toggle domain status
+app.patch('/api/admin/domains/:domain/toggle', authenticateToken, async (req, res) => {
+  try {
+    const { domain } = req.params;
+    const existingDomain = await getDomainFromRedis(domain);
+    
+    if (!existingDomain) {
+      return res.status(404).json({ error: 'Domain not found' });
+    }
+    
+    existingDomain.status = existingDomain.status === 'active' ? 'inactive' : 'active';
+    await saveDomainToRedis(existingDomain);
+    
+    // Log the status change
+    const log = {
+      id: uuidv4(),
+      action: 'DOMAIN_STATUS_CHANGED',
+      domain: domain,
+      newStatus: existingDomain.status,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    // Emit real-time update
+    io.emit('domainStatusChanged', existingDomain);
+    io.emit('newLog', log);
+    
+    res.json({ success: true, domain: existingDomain });
+  } catch (error) {
+    console.error('Toggle domain status error:', error);
+    res.status(500).json({ error: 'Failed to toggle domain status' });
+  }
+});
+
+// Delete domain
+app.delete('/api/admin/domains/:domain', authenticateToken, async (req, res) => {
+  try {
+    const { domain } = req.params;
+    const existingDomain = await getDomainFromRedis(domain);
+    
+    if (!existingDomain) {
+      return res.status(404).json({ error: 'Domain not found' });
+    }
+    
+    await deleteDomainFromRedis(domain);
+    
+    // Log the domain deletion
+    const log = {
+      id: uuidv4(),
+      action: 'DOMAIN_DELETED',
+      domain: domain,
+      timestamp: new Date(),
+      ip: req.ip
+    };
+    await saveLogToRedis(log);
+    
+    // Emit real-time update
+    io.emit('domainDeleted', { domain });
+    io.emit('newLog', log);
+    
+    res.json({ success: true, message: 'Domain deleted successfully' });
+  } catch (error) {
+    console.error('Delete domain error:', error);
+    res.status(500).json({ error: 'Failed to delete domain' });
+  }
+});
+
 // Cleanup function for expired messages
 function cleanupExpiredMessages() {
   const now = new Date();
@@ -1387,19 +1947,291 @@ function cleanupExpiredMessages() {
 
 // Run cleanup every hour
 setInterval(cleanupExpiredMessages, 60 * 60 * 1000);
+setInterval(cleanupExpiredAttachments, 60 * 60 * 1000);
+
+// Enhanced rate limiter for attachment downloads
+const attachmentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 attachment downloads per windowMs
+  message: {
+    error: 'Too many download requests, please try again later',
+    retryAfter: 15 * 60
+  },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+// Secure attachment download endpoint with enhanced security
+app.get('/api/attachments/:attachmentId/download', attachmentLimiter, async (req, res) => {
+  try {
+    const { attachmentId } = req.params;
+    const { token } = req.query;
+    
+    if (!token) {
+      return res.status(401).json({ error: 'Security token required' });
+    }
+    
+    const attachment = await getAttachmentMetadata(attachmentId);
+    
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+    
+    // Verify security token
+    if (attachment.secureToken !== token) {
+      return res.status(403).json({ error: 'Invalid security token' });
+    }
+    
+    // Check if attachment has expired
+    if (new Date() > new Date(attachment.expiresAt)) {
+      await deleteAttachmentFile(attachmentId);
+      return res.status(410).json({ error: 'Attachment has expired' });
+    }
+    
+    // Check if file exists
+    if (!fs.existsSync(attachment.filePath)) {
+      return res.status(404).json({ error: 'Attachment file not found' });
+    }
+    
+    // Increment download count
+    attachment.downloadCount = (attachment.downloadCount || 0) + 1;
+    await saveAttachmentMetadata(attachment);
+    
+    // Set security headers
+    res.setHeader('Content-Type', attachment.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${attachment.originalName}"`);
+    res.setHeader('Content-Length', attachment.size);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    
+    // Stream file to response
+    const fileStream = fs.createReadStream(attachment.filePath);
+    fileStream.pipe(res);
+    
+    console.log(`📎 Attachment downloaded: ${attachment.originalName} (${attachment.downloadCount} downloads)`);
+    
+  } catch (error) {
+    console.error('Attachment download error:', error);
+    res.status(500).json({ error: 'Failed to download attachment' });
+  }
+});
+
+// Get attachment info endpoint with rate limiting
+app.get('/api/attachments/:attachmentId/info', attachmentLimiter, async (req, res) => {
+  try {
+    const { attachmentId } = req.params;
+    const { token } = req.query;
+    
+    if (!token) {
+      return res.status(401).json({ error: 'Security token required' });
+    }
+    
+    const attachment = await getAttachmentMetadata(attachmentId);
+    
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+    
+    // Verify security token
+    if (attachment.secureToken !== token) {
+      return res.status(403).json({ error: 'Invalid security token' });
+    }
+    
+    // Check if attachment has expired
+    if (new Date() > new Date(attachment.expiresAt)) {
+      await deleteAttachmentFile(attachmentId);
+      return res.status(410).json({ error: 'Attachment has expired' });
+    }
+    
+    res.json({
+      id: attachment.id,
+      name: attachment.originalName,
+      size: attachment.size,
+      type: attachment.mimeType,
+      uploadedAt: attachment.uploadedAt,
+      expiresAt: attachment.expiresAt,
+      downloadCount: attachment.downloadCount || 0,
+      timeRemaining: getTimeRemaining(attachment.expiresAt)
+    });
+    
+  } catch (error) {
+    console.error('Attachment info error:', error);
+    res.status(500).json({ error: 'Failed to get attachment info' });
+  }
+});
 
 server.listen(PORT, () => {
   console.log(`🚀 RedMail Admin Server running on port ${PORT}`);
-  console.log(`📧 Admin Panel: http://167.99.70.90:${PORT}/admin`);
-  console.log(`🔒 API Base: http://167.99.70.90:${PORT}/api`);
+  console.log(`📧 Admin Panel: http://localhost:${PORT}/admin`);
+  console.log(`🔒 API Base: http://localhost:${PORT}/api`);
   console.log(`🌐 VPS IP: ${CONFIG.VPS_IP}`);
   console.log(`📮 Email Domain: ${CONFIG.EMAIL_DOMAIN}`);
   console.log(`⚙️  Email Expiry: ${CONFIG.EMAIL_EXPIRY_TIME} minutes`);
   console.log(`📦 Message Retention: ${CONFIG.MESSAGE_RETENTION_TIME} hours`);
   console.log(`🔄 Real-time Push: ${CONFIG.REALTIME_API_PUSH ? 'Enabled' : 'Disabled'}`);
   
-  // Start SMTP server
-  setupSMTPServer();
+  // SMTP server disabled for local development to avoid port conflicts
+  console.log('⚠️  SMTP server disabled for local development');
+  // setupSMTPServer();
+  // startSMTPServer();
 });
+
+// Start SMTP server for receiving emails
+const startSMTPServer = () => {
+  try {
+    const { SMTPServer } = require('smtp-server');
+    
+    const server = new SMTPServer({
+      secure: false,
+      authOptional: true,
+      onConnect(session, callback) {
+        console.log(`📧 SMTP connection from ${session.remoteAddress}`);
+        return callback();
+      },
+      onMailFrom(address, session, callback) {
+        console.log(`📧 Mail from: ${address.address}`);
+        return callback();
+      },
+      onRcptTo(address, session, callback) {
+        const emailAddress = address.address.toLowerCase();
+        console.log(`📧 Mail to: ${emailAddress}`);
+        
+        // Check if this is a valid temporary email
+        getEmailsFromRedis().then(emails => {
+          const tempEmail = emails.find(e => e.email.toLowerCase() === emailAddress);
+          
+          if (!tempEmail) {
+            console.log(`❌ Email not found: ${emailAddress}`);
+            return callback(new Error('Email not found'));
+          }
+          
+          if (new Date() > new Date(tempEmail.expiresAt)) {
+            console.log(`❌ Email expired: ${emailAddress}`);
+            return callback(new Error('Email expired'));
+          }
+          
+          console.log(`✅ Email accepted: ${emailAddress}`);
+          return callback();
+        }).catch(error => {
+          console.error('Error checking email:', error);
+          return callback(new Error('Internal error'));
+        });
+      },
+      onData(stream, session, callback) {
+        let emailData = '';
+        
+        stream.on('data', (chunk) => {
+          emailData += chunk;
+        });
+        
+        stream.on('end', async () => {
+          try {
+            const parsed = await simpleParser(emailData);
+            
+            // Find the recipient email
+            const recipientEmail = session.envelope.rcptTo[0].address.toLowerCase();
+            const emails = await getEmailsFromRedis();
+            const tempEmail = emails.find(e => e.email.toLowerCase() === recipientEmail);
+            
+            if (!tempEmail) {
+              console.log(`❌ Recipient email not found: ${recipientEmail}`);
+              return callback(new Error('Recipient not found'));
+            }
+            
+            // Process attachments with size validation
+            let processedAttachments = [];
+            let totalAttachmentSize = 0;
+            
+            if (parsed.attachments && parsed.attachments.length > 0) {
+              // Check total number of attachments
+              if (parsed.attachments.length > CONFIG.MAX_ATTACHMENTS_PER_EMAIL) {
+                console.warn(`⚠️  Too many attachments (${parsed.attachments.length}), limit: ${CONFIG.MAX_ATTACHMENTS_PER_EMAIL}`);
+                parsed.attachments = parsed.attachments.slice(0, CONFIG.MAX_ATTACHMENTS_PER_EMAIL);
+              }
+              
+              for (const attachment of parsed.attachments) {
+                totalAttachmentSize += attachment.size || 0;
+                
+                // Check total size limit
+                if (totalAttachmentSize > CONFIG.MAX_ATTACHMENT_SIZE) {
+                  console.warn(`⚠️  Attachment size limit exceeded (${totalAttachmentSize} bytes), limit: ${CONFIG.MAX_ATTACHMENT_SIZE}`);
+                  break;
+                }
+                
+                try {
+                  const savedAttachment = await saveAttachmentToStorage(attachment, tempEmail.id);
+                  processedAttachments.push(savedAttachment);
+                  console.log(`📎 Attachment saved: ${attachment.filename} (${attachment.size} bytes)`);
+                } catch (error) {
+                  console.error(`❌ Failed to save attachment ${attachment.filename}:`, error.message);
+                  // Continue processing other attachments
+                }
+              }
+            }
+            
+            // Create message object
+            const message = {
+              id: uuidv4(),
+              from: parsed.from?.text || session.envelope.mailFrom.address,
+              to: recipientEmail,
+              subject: parsed.subject || 'No Subject',
+              text: parsed.text || '',
+              html: parsed.html || '',
+              date: parsed.date || new Date(),
+              attachments: processedAttachments,
+              hasAttachments: processedAttachments.length > 0,
+              attachmentCount: processedAttachments.length,
+              receivedAt: new Date(),
+              expiresAt: new Date(Date.now() + CONFIG.MESSAGE_RETENTION_TIME * 60 * 60 * 1000)
+            };
+            
+            // Save message to Redis
+            await saveMessageToRedis(tempEmail.id, message);
+            
+            // Update message count
+            tempEmail.messageCount = (tempEmail.messageCount || 0) + 1;
+            await saveEmailToRedis(tempEmail);
+            
+            // Log the received message
+            const log = {
+              id: uuidv4(),
+              action: 'MESSAGE_RECEIVED',
+              email: recipientEmail,
+              from: message.from,
+              subject: message.subject,
+              timestamp: new Date(),
+              messageId: message.id
+            };
+            await saveLogToRedis(log);
+            
+            // Emit real-time updates
+            io.emit('messageReceived', { email: recipientEmail, message });
+            io.to(`email:${recipientEmail}`).emit('newMessage', { emailId: tempEmail.id, message });
+            io.to(`email_id:${tempEmail.id}`).emit('newMessage', { emailId: tempEmail.id, message });
+            io.emit('newLog', log);
+            
+            console.log(`✅ Message received for ${recipientEmail} from ${message.from}`);
+            return callback();
+          } catch (error) {
+            console.error('Error processing email:', error);
+            return callback(error);
+          }
+        });
+      }
+    });
+    
+    server.listen(CONFIG.SMTP_PORT, CONFIG.SMTP_HOST, () => {
+      console.log(`📧 SMTP server listening on ${CONFIG.SMTP_HOST}:${CONFIG.SMTP_PORT}`);
+    });
+    
+    server.on('error', (error) => {
+      console.error('❌ SMTP server error:', error);
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to start SMTP server:', error);
+    console.log('⚠️  SMTP server disabled. Install dependencies: npm install smtp-server');
+  }
+};
 
 module.exports = app;

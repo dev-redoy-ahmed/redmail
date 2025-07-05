@@ -205,6 +205,7 @@ body {
 .content {
   flex: 1;
   padding: var(--spacing-xl);
+  padding-top: calc(70px + var(--spacing-xl)); /* Header height + spacing */
   overflow-y: auto;
 }
 

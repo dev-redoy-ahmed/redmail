@@ -6,6 +6,87 @@
     <title>RedMail Admin Panel - Secure Temporary Mail Management</title>
     <link rel="stylesheet" href="/css/admin.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <style>
+        /* Domain Management Styles */
+        .domain-form {
+            background: var(--bg-tertiary);
+            padding: 1.5rem;
+            border-radius: var(--radius-lg);
+            margin-bottom: 2rem;
+            border: 1px solid var(--gray-700);
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .domains-list {
+            margin-top: 2rem;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--gray-700);
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-secondary);
+        }
+        
+        .table th,
+        .table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--gray-700);
+        }
+        
+        .table th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--white);
+        }
+        
+        .table td {
+            color: var(--gray-300);
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: var(--radius-full);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        
+        .badge-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
+        }
+        
+        .badge-secondary {
+            background: rgba(107, 114, 128, 0.2);
+            color: #9ca3af;
+        }
+        
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+        
+        .card-actions {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .mt-4 {
+            margin-top: 2rem;
+        }
+    </style>
 </head>
 <body>
     <div class="admin-container">
@@ -178,15 +259,84 @@
                 
                 <!-- Settings Content -->
                 <div id="settings-content" class="page-content">
+                    <!-- Domain Management Section -->
                     <div class="card">
                         <div class="card-header">
-                            <h3 class="card-title">Domain & SMTP Configuration</h3>
+                            <h3 class="card-title">Domain Management</h3>
+                            <div class="card-actions">
+                                <button class="btn btn-primary" id="addDomainBtn">
+                                    <i class="fas fa-plus"></i>
+                                    Add Domain
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                <strong>Multi-Domain Support:</strong> Add multiple domains to distribute email load and improve service reliability. Each domain will be used randomly for new email generation.
+                            </div>
+                            
+                            <!-- Add Domain Form -->
+                            <div id="addDomainForm" class="domain-form" style="display: none;">
+                                <div class="form-group">
+                                    <label class="form-label">Domain Name</label>
+                                    <input type="text" class="form-input" id="newDomainName" placeholder="example.com">
+                                    <small class="form-help">Enter domain without protocol (e.g., example.com)</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Domain Status</label>
+                                    <select class="form-input" id="newDomainStatus">
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                    </select>
+                                </div>
+                                <div class="form-actions">
+                                    <button class="btn btn-success" id="saveDomainBtn">
+                                        <i class="fas fa-save"></i>
+                                        Save Domain
+                                    </button>
+                                    <button class="btn btn-secondary" id="cancelDomainBtn">
+                                        <i class="fas fa-times"></i>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Domains List -->
+                            <div class="domains-list">
+                                <div class="table-container">
+                                    <table class="table" id="domainsTable">
+                                        <thead>
+                                            <tr>
+                                                <th>Domain</th>
+                                                <th>Status</th>
+                                                <th>Added Date</th>
+                                                <th>Emails Generated</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="domainsTableBody">
+                                            <tr>
+                                                <td colspan="5" class="text-center">Loading domains...</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h3 class="card-title">SMTP Configuration</h3>
                         </div>
                         <div class="card-body">
                             <div class="form-group">
-                                <label class="form-label">Email Domain</label>
-                                <input type="text" class="form-input" id="emailDomain" value="oplex.online">
-                                <small class="form-help">Your custom domain for temporary emails</small>
+                                <label class="form-label">Primary Email Domain</label>
+                                <select class="form-input" id="primaryDomain">
+                                    <option value="oplex.online">oplex.online</option>
+                                </select>
+                                <small class="form-help">Select primary domain for system emails</small>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">VPS IP Address</label>
@@ -250,22 +400,26 @@
                     </div>
                     
                     <div class="card mt-4">
-                        <div class="card-header">
-                            <h3 class="card-title">System Tests</h3>
-                        </div>
-                        <div class="card-body">
-                            <button class="btn btn-primary" id="testConnectivity">
-                                <i class="fas fa-check-circle"></i>
-                                Test System Connectivity
-                            </button>
-                            <button class="btn btn-success ml-2" id="testOTP">
-                                <i class="fas fa-paper-plane"></i>
-                                Send Test OTP
-                            </button>
-                            <div id="connectivityResult" class="mt-3"></div>
-                            <div id="otpTestResult" class="mt-3"></div>
-                        </div>
+                    <div class="card-header">
+                        <h3 class="card-title">System Tests</h3>
                     </div>
+                    <div class="card-body">
+                        <button class="btn btn-primary" id="testConnectivity">
+                            <i class="fas fa-check-circle"></i>
+                            Test System Connectivity
+                        </button>
+                        <button class="btn btn-success ml-2" id="testOTP">
+                            <i class="fas fa-paper-plane"></i>
+                            Send Test OTP
+                        </button>
+                        <button class="btn btn-info ml-2" onclick="window.open('/index.html', '_blank')">
+                            <i class="fas fa-envelope"></i>
+                            Test Mail
+                        </button>
+                        <div id="connectivityResult" class="mt-3"></div>
+                        <div id="otpTestResult" class="mt-3"></div>
+                    </div>
+                </div>
                     
                     <div class="card mt-4">
                         <div class="card-header">

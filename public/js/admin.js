@@ -201,6 +201,19 @@ class AdminPanel {
             this.saveSettings();
         });
 
+        // Domain management events
+        document.getElementById('addDomainBtn').addEventListener('click', () => {
+            this.showAddDomainForm();
+        });
+
+        document.getElementById('saveDomainBtn').addEventListener('click', () => {
+            this.saveDomain();
+        });
+
+        document.getElementById('cancelDomainBtn').addEventListener('click', () => {
+            this.hideAddDomainForm();
+        });
+
         // Responsive sidebar
         window.addEventListener('resize', () => {
             const sidebar = document.getElementById('sidebar');
@@ -849,6 +862,9 @@ class AdminPanel {
             document.getElementById('messageRetentionTime').value = response.settings.messageRetentionTime || 24;
             document.getElementById('realtimeApiPush').checked = response.settings.realtimeApiPush !== false;
             document.getElementById('autoRefreshInterval').value = response.settings.autoRefreshInterval || 5;
+            
+            // Load domains
+            this.loadDomains();
         } catch (error) {
             console.error('Failed to load settings:', error);
             // Use default values if loading fails
@@ -1729,6 +1745,127 @@ class AdminPanel {
             });
         }
     }
+
+    // Domain Management Methods
+    async loadDomains() {
+        try {
+            const response = await this.apiCall('/api/admin/domains');
+            this.displayDomains(response.domains);
+            this.updatePrimaryDomainSelect(response.domains);
+        } catch (error) {
+            console.error('Failed to load domains:', error);
+            this.showNotification('error', 'Failed to load domains');
+        }
+    }
+
+    displayDomains(domains) {
+        const tbody = document.getElementById('domainsTableBody');
+        
+        if (!domains || domains.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">No domains found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = domains.map(domain => {
+            const statusBadge = domain.status === 'active' ? 
+                '<span class="badge badge-success">Active</span>' : 
+                '<span class="badge badge-secondary">Inactive</span>';
+            
+            return `
+                <tr>
+                    <td>${domain.name}</td>
+                    <td>${statusBadge}</td>
+                    <td>${new Date(domain.addedAt).toLocaleDateString()}</td>
+                    <td>${domain.emailsGenerated || 0}</td>
+                    <td>
+                        <button class="btn btn-sm btn-secondary" onclick="adminPanel.toggleDomainStatus('${domain.name}')">
+                            <i class="fas fa-${domain.status === 'active' ? 'pause' : 'play'}"></i>
+                            ${domain.status === 'active' ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="adminPanel.deleteDomain('${domain.name}')">
+                            <i class="fas fa-trash"></i>
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    updatePrimaryDomainSelect(domains) {
+        const select = document.getElementById('primaryDomain');
+        if (!select) return;
+        
+        const activeDomains = domains.filter(d => d.status === 'active');
+        select.innerHTML = activeDomains.map(domain => 
+            `<option value="${domain.name}">${domain.name}</option>`
+        ).join('');
+    }
+
+    showAddDomainForm() {
+        document.getElementById('addDomainForm').style.display = 'block';
+        document.getElementById('newDomainName').focus();
+    }
+
+    hideAddDomainForm() {
+        document.getElementById('addDomainForm').style.display = 'none';
+        document.getElementById('newDomainName').value = '';
+        document.getElementById('newDomainStatus').value = 'active';
+    }
+
+    async saveDomain() {
+        const domainName = document.getElementById('newDomainName').value.trim();
+        const domainStatus = document.getElementById('newDomainStatus').value;
+
+        if (!domainName) {
+            this.showNotification('error', 'Please enter a domain name');
+            return;
+        }
+
+        // Validate domain format
+        const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,}$/;
+        if (!domainRegex.test(domainName)) {
+            this.showNotification('error', 'Please enter a valid domain name');
+            return;
+        }
+
+        try {
+            await this.apiCall('/api/admin/domains', 'POST', {
+                name: domainName,
+                status: domainStatus
+            });
+
+            this.showNotification('success', 'Domain added successfully!');
+            this.hideAddDomainForm();
+            this.loadDomains();
+        } catch (error) {
+            this.showNotification('error', error.message || 'Failed to add domain');
+        }
+    }
+
+    async toggleDomainStatus(domainName) {
+        try {
+            await this.apiCall(`/api/admin/domains/${domainName}/toggle`, 'PUT');
+            this.showNotification('success', 'Domain status updated successfully!');
+            this.loadDomains();
+        } catch (error) {
+            this.showNotification('error', error.message || 'Failed to update domain status');
+        }
+    }
+
+    async deleteDomain(domainName) {
+        if (!confirm(`Are you sure you want to delete domain "${domainName}"? This action cannot be undone.`)) {
+            return;
+        }
+
+        try {
+            await this.apiCall(`/api/admin/domains/${domainName}`, 'DELETE');
+            this.showNotification('success', 'Domain deleted successfully!');
+            this.loadDomains();
+        } catch (error) {
+            this.showNotification('error', error.message || 'Failed to delete domain');
+        }
+    }
 }
 
 // Add CSS for page content visibility
@@ -1769,6 +1906,7 @@ style.textContent = `
 document.head.appendChild(style);
 
 // Initialize admin panel
+let adminPanel;
 document.addEventListener('DOMContentLoaded', () => {
-    new AdminPanel();
+    adminPanel = new AdminPanel();
 });
